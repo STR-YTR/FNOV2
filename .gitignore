@@ -1,0 +1,5 @@
+# Large CFD and generated datasets (keep documentation only)
+data/openfoam/**
+data/vtk/**
+data/processed/**
+!data/README.md

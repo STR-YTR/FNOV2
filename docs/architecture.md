@@ -1,0 +1,17 @@
+Openfoam
+↓
+VTK
+↓
+make_pairs.py
+↓
+pairs.pt
+↓
+dataset.py
+↓
+train.py
+↓
+checkpoint
+↓
+rollout.py
+↓
+evaluate.py
