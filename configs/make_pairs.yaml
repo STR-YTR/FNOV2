@@ -1,5 +1,5 @@
 data:
-  input_dir: ../data/vtk
+  input_dir: ../data/VTK
   output_dir: ../data/processed/pairs
   recursive: true
   file_pattern: 'case(?P<case>\d+)_(?P<step>\d+)\.vtm$'
