@@ -1,0 +1,20 @@
+dataset:
+  data_dir: ../data/processed/pairs
+  file_pattern: "pairs_case*_Re*.pt"
+
+  # チャネル順・チャネル数の正本。Modelのin/out channelsはこのリストから導出する(mask,Re,x,y,u,v,p),(u,v,p)
+  input_channels:
+    - mask
+    - Re
+    - x
+    - y
+    - u
+    - v
+    - p
+  output_channels:
+    - u
+    - v
+    - p
+
+  # 大容量データを一括ロードせず、直近に参照したpairファイルだけを保持する。
+  cache_file: true

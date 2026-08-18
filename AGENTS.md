@@ -294,7 +294,523 @@ FNO用のone-step pairへ変換する。
     }
 }
 ```
+## Datasetについて
 
+Datasetは、生成済みのpair `.pt` ファイルを読み込み、
+FNOの学習に使用する1サンプル単位のTensorを返す役割を持つ。
+
+Dataset自体は新しいデータファイルを生成・保存せず、
+学習時に`.pt`から必要なデータを読み出してTensorとして扱う。
+
+現在の基本入力は以下の7チャネルとする。
+
+```text
+[mask, Re, x, y, u, v, p]
+```
+
+教師データは以下の3チャネルとする。
+
+```text
+[u(t+dt), v(t+dt), p(t+dt)]
+```
+
+したがって、1サンプルの基本shapeは、
+
+```text
+input  : [7, H, W]
+target : [3, H, W]
+```
+
+とする。
+
+Dataset実装の最初の目標は、
+
+```python
+x, y = dataset[i]
+```
+
+によって、正しいチャネル・shape・値を持つTensorを取得できることである。
+
+Reごとのtrain / validation / test分割、batch化、shuffleなどは
+Datasetに直接埋め込まず、後段の設定およびDataLoaderで管理する。
+
+また、将来的なablation studyに対応できるよう、
+入力チャネルを固定的にハードコードしすぎない設計とする。
+
+例えば、
+
+```text
+Baseline:
+[mask, Re, x, y, u, v, p]
+
+No-Re:
+[mask, x, y, u, v, p]
+```
+
+のような比較を、同じ`.pt`データからチャネルを選択することで実行可能にする。
+
+Reの有無などの実験条件を変更するためだけに、
+`.pt`データを再生成・複製する設計は避ける。
+
+## DataLoaderについて
+
+DataLoaderは、Datasetから取得したサンプルを
+train / validationに分割し、FNOの学習に使用するbatchを生成する役割を持つ。
+
+Datasetでは1サンプル単位のTensorを定義し、
+DataLoaderでは主に以下を担当する。
+
+- Reynolds number単位でのtrain / validation分割
+- batch化
+- shuffle
+- num_workers
+- pin_memory
+- drop_last
+
+testデータについては現段階ではDataLoaderに含めず、
+学習およびハイパーパラメータ決定後に独立したtest処理で評価する。
+
+
+### Reによるtrain / validation分割
+
+今回のbaselineでは、Re=10〜250の25ケースを使用する。
+
+validationはReケース単位で分離し、
+同一Reのサンプルをtrainとvalidationの両方に含めない。
+
+基本設定：
+
+```text
+Train:
+10, 20, 30, 40,
+60, 70, 80, 90,
+110, 120, 130, 140,
+160, 170, 180, 190,
+210, 220, 230, 240, 250
+
+Validation:
+50, 100, 150, 200
+```
+
+ケース数：
+
+```text
+Train      : 21 cases
+Validation : 4 cases
+```
+
+各Reケースが100 pairsの場合：
+
+```text
+Train      : 2100 samples
+Validation : 400 samples
+```
+
+おおよそ、
+
+```text
+Train : Validation = 84 : 16
+```
+
+となる。
+
+Re分割はPythonコードへハードコードせず、
+`configs/dataloader.yaml`を正本として管理する。
+
+
+### dataloader.yaml
+
+初期設定の例：
+
+```yaml
+split:
+  train_re:
+    - 10
+    - 20
+    - 30
+    - 40
+    - 60
+    - 70
+    - 80
+    - 90
+    - 110
+    - 120
+    - 130
+    - 140
+    - 160
+    - 170
+    - 180
+    - 190
+    - 210
+    - 220
+    - 230
+    - 240
+    - 250
+
+  val_re:
+    - 50
+    - 100
+    - 150
+    - 200
+
+loader:
+  batch_size: 16
+  train_shuffle: true
+  val_shuffle: false
+  num_workers: 0
+  pin_memory: true
+  drop_last: false
+```
+
+batch size等は今後のGPUメモリ使用量や学習速度を確認して変更可能とする。
+
+### 学習対象ReおよびTrain / Validation分割
+
+初期のbaseline実験では、学習・validationに使用するReynolds numberの範囲を以下とする。
+
+```text
+Re = 10〜250
+```
+
+10刻みで生成した25ケースを対象とする。
+
+train / validationの分割はサンプル単位のランダム分割ではなく、
+**Reケース単位で分割する**。
+
+初期分割は以下とする。
+
+```text
+Train:
+Re = 10, 20, 30, 40,
+     60, 70, 80, 90,
+     110, 120, 130, 140,
+     160, 170, 180, 190,
+     210, 220, 230, 240, 250
+
+Validation:
+Re = 50, 100, 150, 200
+```
+
+ケース数ベースでは、
+
+```text
+Train      : 21 cases（84%）
+Validation :  4 cases（16%）
+```
+
+となる。
+
+各Reケースが100 pairsの場合、サンプル数は、
+
+```text
+Train      : 2100 samples
+Validation :  400 samples
+```
+
+となる。
+
+このRe分割は`dataloader.yaml`を正本として管理し、
+`dataloader.py`内へ具体的なRe値をハードコードしない。
+
+また、同一Reのデータがtrainとvalidationの両方へ含まれることを禁止する。
+実装時には、
+
+```text
+train_re ∩ val_re = ∅
+```
+
+であることを必ず検証する。
+
+Re=260〜300の既存データは、現時点ではtrain / validationには使用しない。
+最終的なtest条件については、モデルおよび学習条件をtrain / validationで確定した後に別途定義する。
+
+最終testでは、学習に使用していないReを用いた
+内挿・外挿性能の評価を予定している。
+
+### Datasetとの連携
+
+DataLoader用にデータを再生成しない。
+
+既存の`dataset.py`を利用し、
+Datasetが読み込んだサンプルについてReを識別して
+train / validationへ振り分ける。
+
+Dataset側では、各サンプルがどのReケースに属するかを
+DataLoaderから安全に取得できる構造にする。
+
+ただし、Datasetの入力チャネルとしてReを使用するかどうかと、
+サンプルをtrain / validationへ分割するためのRe metadataは区別すること。
+
+例えば、
+
+```yaml
+input_channels:
+  - mask
+  - x
+  - y
+  - u
+  - v
+  - p
+```
+
+としてFNO入力からReチャネルを除外した場合でも、
+DataLoaderはmetadata等から各サンプルのReを識別できなければならない。
+
+つまり、
+
+```text
+ReをFNOへ入力するか
+```
+
+と、
+
+```text
+どのReケースのデータか
+```
+
+は別の情報として扱う。
+
+
+### Batch shape
+
+Baselineの7入力チャネルでは、
+Datasetの1サンプルは、
+
+```text
+x : [7, H, W]
+y : [3, H, W]
+```
+
+である。
+
+batch_size=16の場合、DataLoader出力は、
+
+```text
+x : [16, 7, H, W]
+y : [16, 3, H, W]
+```
+
+となることを確認する。
+
+入力チャネルを変更した場合は、
+`dataset.yaml`の設定に自動追従すること。
+
+例えばReチャネルを除外した場合：
+
+```text
+x : [16, 6, H, W]
+y : [16, 3, H, W]
+```
+
+となる。
+
+チャネル数をDataLoader側へハードコードしない。
+
+
+### Shuffle
+
+基本設定：
+
+```text
+train      : shuffle = true
+validation : shuffle = false
+```
+
+とする。
+
+validationでは再現性および評価結果の追跡を容易にするため、
+原則としてshuffleしない。
+
+
+### DataLoader実装後のsanity check
+
+実装後は、学習コードへ進む前に最低限以下を自動または明示的に確認すること。
+
+1. 読み込まれた`.pt`ファイル数
+2. Dataset全体のサンプル数
+3. trainに含まれるRe一覧
+4. validationに含まれるRe一覧
+5. train / validation間にReの重複がないこと
+6. 指定したReが存在せず、splitから欠落していないこと
+7. 意図していないReがtrain / validationに混入していないこと
+8. train sample数
+9. validation sample数
+10. train batchのx/y shape
+11. validation batchのx/y shape
+12. input channel設定変更時にbatch shapeが自動追従すること
+13. NaN / Infが含まれていないこと
+
+
+baselineでは少なくとも、
+
+```text
+Train samples      = 2100
+Validation samples = 400
+```
+
+であることを確認する。
+
+
+### データリーク防止
+
+今回の研究ではReynolds numberに対する汎化性能を評価するため、
+train / validation間のReの重複を禁止する。
+
+以下のような状態を検出した場合は、
+警告だけで続行せずエラーとして停止すること。
+
+```text
+train_re ∩ val_re != ∅
+```
+
+また、splitとして指定したReがDatasetに存在しない場合も、
+設定ミスの可能性があるため原則としてエラーとする。
+
+
+### Testデータについて
+
+最終testは学習およびハイパーパラメータ調整には使用しない。
+
+モデルおよび学習条件をtrain / validationによって確定した後、
+独立したtestデータを用いて評価する。
+
+予定している評価例：
+
+```text
+Interpolation:
+Re = 85, 135, 185, 235 など
+
+Extrapolation:
+Re = 260, 275, 300 など
+```
+
+test結果を参照してモデル構造やハイパーパラメータを調整した場合、
+そのtestデータは純粋な最終評価用データとして扱わない。
+
+
+### 実装上の原則
+
+DataLoader実装時は、既存の`dataset.py`および
+`dataset.yaml`の設計を確認してから実装すること。
+
+特に以下を避ける。
+
+- input channel数の再定義
+- DatasetとDataLoaderでのRe情報の重複管理
+- train / validation ReのPythonコードへのハードコード
+- Datasetと異なるchannel順の独自定義
+- train / validation間のデータリーク
+- testデータを学習中のモデル選択に使用すること
+
+既存の設定から取得・導出可能な値は再定義せず、
+Single Source of Truthの原則に従うこと。
+
+## YAML設定管理の注意事項
+
+本プロジェクトでは、Dataset、DataLoader、Model、Trainingなどの
+実験条件をYAMLで管理する。
+
+設定値の重複による変更漏れや不整合を防ぐため、
+同じ意味を持つ設定値を複数のYAMLやPythonコードに重複して定義しない。
+
+各設定値には原則として1つの正本
+（Single Source of Truth）を持たせる。
+
+上流工程ですでに決定されている情報を下流工程で使用する場合は、
+同じ値を再定義せず、上流の設定から参照または自動導出する。
+
+例えば、Dataset設定で、
+
+```yaml
+input_channels:
+  - mask
+  - Re
+  - x
+  - y
+  - u
+  - v
+  - p
+
+output_channels:
+  - u
+  - v
+  - p
+```
+
+と定義されている場合、Model側で、
+
+```yaml
+in_channels: 7
+out_channels: 3
+```
+
+のように同じ情報を手動で再定義することは避ける。
+
+代わりにPython側で、
+
+```python
+in_channels = len(input_channels)
+out_channels = len(output_channels)
+```
+
+のように自動導出する。
+
+これにより、例えばDataset設定からReを除外した場合、
+
+```text
+7 channels
+    ↓
+6 channels
+```
+
+という変更が、
+
+```text
+Dataset
+  ↓
+Tensor shape
+  ↓
+Modelのin_channels
+  ↓
+Training
+  ↓
+Inference / Evaluation
+```
+
+まで自動的に反映される設計を目指す。
+
+基本原則は、
+
+```text
+人間が決める実験条件
+        ↓
+      YAML
+        ↓
+そこから一意に決まる値
+        ↓
+Python側で自動導出
+```
+
+とする。
+
+YAMLファイルが複数に分かれている場合も、
+同じ設定値をそれぞれに記述するのではなく、
+その値を管理する上流側のYAMLを正本とする。
+
+YAML同士を複雑に直接参照させるのではなく、
+実行するPythonコード側で必要なYAMLを読み込み、
+設定値を統合してDataset、DataLoader、Model、Trainingなどへ渡す。
+
+新しい設定値を追加する際は、以下を確認すること。
+
+1. この設定値の正本はどこか
+2. 既存の設定値から自動導出できないか
+3. 同じ意味の値を別のYAMLやPythonコードに重複定義していないか
+4. 上流設定を変更したときに下流処理が自動的に追従するか
+5. チャネル数、Re条件、解像度などをハードコードしていないか
+
+実験条件を1つ変更するために複数のPythonファイルやYAMLを
+手作業で同時修正する必要がある設計は、可能な限り避けること。
 時間間隔、bounds、格子解像度などを、
 理由なくコード内へ固定値として埋め込まない。
 
