@@ -18,3 +18,27 @@ dataset:
 
   # 大容量データを一括ロードせず、直近に参照したpairファイルだけを保持する。
   cache_file: true
+
+normalization:
+  # u/v/pの統計値と、それを算出したtrain splitのmetadata。
+  statistics_file: normalization_stats.yaml
+  mask:
+    type: none
+  Re:
+    type: scale
+    scale: 250.0
+  x:
+    type: scale
+    scale: 1.6
+  y:
+    type: scale
+    scale: 0.41
+  fields:
+    type: standardize
+    statistics_source: train
+    valid_region_only: true
+
+# dataset.pyを直接実行した場合のNormalization確認表示。
+debug:
+  enabled: true
+  sample_count: 5

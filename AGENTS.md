@@ -351,6 +351,247 @@ No-Re:
 
 Reの有無などの実験条件を変更するためだけに、
 `.pt`データを再生成・複製する設計は避ける。
+## DatasetにおけるNormalization / Standardization
+
+Datasetは、生成済みのpair `.pt` に保存された物理量をそのまま返すだけでなく、
+必要に応じて学習用のスケーリングおよび標準化を適用する役割を持つ。
+
+元の`.pt`データは物理量の生値を保持し、
+正規化・標準化のためだけに別の`.pt`データを再生成しない。
+
+基本的な処理フローは以下とする。
+
+```text
+pair .pt（生の物理量）
+        ↓
+Dataset
+        ↓
+channel selection
+        ↓
+normalization / standardization
+        ↓
+Tensor
+        ↓
+DataLoader
+        ↓
+Model
+```
+
+### Baselineの変換方針
+
+現在のbaselineでは、以下の変換を採用候補とする。
+
+```text
+mask
+→ 変換しない
+→ 0 / 1 のまま使用
+
+Re
+→ 学習範囲上限によるscaling
+→ Re_scaled = Re / 250
+
+x
+→ 0〜1へscaling
+→ x_scaled = x / 1.6
+
+y
+→ 0〜1へscaling
+→ y_scaled = y / 0.41
+
+u
+→ trainデータのmean/stdによるstandardization
+
+v
+→ trainデータのmean/stdによるstandardization
+
+p
+→ trainデータのmean/stdによるstandardization
+```
+
+u, v, pの標準化は、
+
+```text
+z = (x - mean_train) / std_train
+```
+
+を用いる。
+
+meanおよびstdは必ずtrainデータから算出し、
+validationおよびtestデータの統計量を使用してはならない。
+
+
+### 統計量の算出範囲
+
+u, v, pのmean/stdは、
+train splitに含まれるReケースのみから算出する。
+
+validationおよびtestのReは統計量計算に含めない。
+
+また、u, v, pについては、
+物理的に有効な流体領域のみを統計量算出対象とする。
+
+現在のpair生成では、
+
+```text
+mask == 1
+```
+
+を有効領域とし、
+
+```text
+mask == 0
+```
+
+ではu, v, pが0として保存されている。
+
+この人工的な0値がmean/stdへ影響しないよう、
+u, v, pの統計量は原則として`mask == 1`の要素のみから計算する。
+
+
+### Input / Outputの統計量
+
+one-step predictionでは、
+
+```text
+input:
+u(t), v(t), p(t)
+
+output:
+u(t+dt), v(t+dt), p(t+dt)
+```
+
+を扱う。
+
+現在のtrainデータではinputとoutputの統計量がほぼ一致しているため、
+baselineでは同一のtrain統計量をinputおよびtargetのu, v, pへ使用する設計を基本候補とする。
+
+これにより、autoregressive rolloutにおいても、
+
+```text
+予測されたstandardized u/v/p
+        ↓
+次stepの入力u/v/p
+```
+
+を一貫したスケールで扱えるようにする。
+
+ただし、inputとoutputで異なる統計量を使用する実装へ変更する場合は、
+rollout時の変換方法も含めて明示的に設計すること。
+
+
+### Inverse Transform
+
+評価・可視化・VTK出力などで物理量が必要な場合は、
+標準化された予測値を元の物理スケールへ戻せるようにする。
+
+u, v, pについては、
+
+```text
+x = z * std_train + mean_train
+```
+
+によってinverse transformできる構造とする。
+
+Datasetまたは共通のnormalization utilityに、
+forward transformとinverse transformの両方を定義することが望ましい。
+
+学習時・推論時・rollout時・評価時で、
+異なる変換式を重複実装しないこと。
+
+
+### YAMLによる管理
+
+Normalization / standardizationの条件はPythonコードへ直接ハードコードせず、
+`dataset.yaml`を正本として管理する。
+
+例：
+
+```yaml
+normalization:
+
+  mask:
+    type: none
+
+  Re:
+    type: scale
+    scale: 250.0
+
+  x:
+    type: scale
+    scale: 1.6
+
+  y:
+    type: scale
+    scale: 0.41
+
+  fields:
+    type: standardize
+    statistics_source: train
+    valid_region_only: true
+```
+
+具体的なmean/stdの値を手作業で複数箇所へ記述しない。
+
+統計量を計算・保存する場合は、
+どのtrain splitから計算された値か分かるmetadataを保持する。
+
+
+### Single Source of Truth
+
+Normalizationに関する設定値も、
+既存のSingle Source of Truthの原則に従う。
+
+例えば、
+
+```text
+Re scale = 250
+```
+
+をDataset、Model、Train、Inferenceで個別に定義してはならない。
+
+`dataset.yaml`または共通のnormalization設定を正本とし、
+学習・推論・評価は同じ設定を参照すること。
+
+
+### Dataset実装後のSanity Check
+
+Normalization対応後は、学習へ進む前に最低限以下を確認する。
+
+1. maskが0/1のまま保持されていること
+2. Reが想定したscaleで変換されていること
+3. xおよびyが想定した範囲に変換されていること
+4. u, v, pの標準化後meanが概ね0になること
+5. u, v, pの標準化後stdが概ね1になること
+6. validationデータにtrain統計量が使用されていること
+7. validation自身の統計量を使用していないこと
+8. mask == 0の領域が統計量計算へ混入していないこと
+9. NaN / Infが生成されていないこと
+10. inverse transformによって元の値を十分な精度で復元できること
+11. Datasetのinput channel選択を変更してもNormalization処理が破綻しないこと
+
+特に、
+
+```text
+original
+→ normalize / standardize
+→ inverse transform
+```
+
+を行った結果が元データと一致することを確認する。
+
+
+### Codexへの注意
+
+Normalization処理を追加する際、
+学習コードやModel側へ同じ変換処理を重複実装しないこと。
+
+train / validation / testで異なる統計量を独立に計算してはならない。
+
+統計量の算出にはtrainデータのみを使用し、
+validationおよびtest情報のリークを防止すること。
+
+Normalizationの変更は研究条件の変更であるため、
+単なるrefactoringとして扱わず、YAMLおよび実験記録へ明示すること。
 
 ## DataLoaderについて
 

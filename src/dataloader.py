@@ -90,6 +90,14 @@ def create_dataloaders(config_path: str | Path) -> tuple[DataLoader, DataLoader]
     config = load_config(config_path)
     full_dataset = PairDataset.from_config(resolve_path(config["dataset_config"], config_path))
     split = config["split"]
+    if full_dataset.normalizer is not None:
+        configured_train = set(map(float, split["train_re"]))
+        statistics_train = set(full_dataset.normalizer.statistics_train_re)
+        if configured_train != statistics_train:
+            raise ValueError(
+                "Normalization statistics train_re does not match split.train_re: "
+                f"statistics={sorted(statistics_train)}, configured={sorted(configured_train)}"
+            )
     available = set(full_dataset.reynolds_by_file)
     requested = set(map(float, split["train_re"] + split["val_re"]))
     missing = requested - available
