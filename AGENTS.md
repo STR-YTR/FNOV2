@@ -928,7 +928,338 @@ Re = 260, 275, 300 など
 test結果を参照してモデル構造やハイパーパラメータを調整した場合、
 そのtestデータは純粋な最終評価用データとして扱わない。
 
+## Model
 
+FNOモデルには、公式 `neuralop` ライブラリの `FNO` 実装を使用する。
+
+FNO内部のSpectral Convolution、Fourier Transform、FNO Block等を独自に再実装せず、
+公式実装を基準とする。
+
+`src/model.py` は主に以下を担当する。
+
+```text
+model.yaml
+    ↓
+モデル設定の読み込み
+
+dataset.yaml
+    ↓
+input / output channel情報の取得
+
+    ↓
+
+neuralop.models.FNO
+    ↓
+FNOモデル生成
+```
+
+### Input / Output channels
+
+`in_channels` および `out_channels` は、
+`model.yaml`へ重複して記述しない。
+
+Datasetで定義された、
+
+```text
+input_channels
+output_channels
+```
+
+から自動的に決定する。
+
+例えば、
+
+```text
+input_channels
+= [mask, Re, x, y, u, v, p]
+
+→ in_channels = 7
+
+output_channels
+= [u, v, p]
+
+→ out_channels = 3
+```
+
+となる。
+
+入力チャネル構成を変更した場合、
+Model側も自動的に追従する構造とする。
+
+
+### Model configuration
+
+FNO固有のハイパーパラメータは、
+原則として `configs/model.yaml` を正本として管理する。
+
+対象には少なくとも以下を含む。
+
+```text
+n_modes
+hidden_channels
+lifting_channels
+projection_channels
+n_layers
+activation
+domain_padding
+positional_embedding
+```
+
+実際に使用する項目は、使用中の `neuralop` バージョンの
+公式FNO APIに存在する引数を確認した上で定義すること。
+
+Pythonコード内へ実験条件となる値を不必要にハードコードしない。
+
+
+### Explicit configuration
+
+`neuralop.models.FNO` のデフォルト設定を無条件に使用しない。
+
+今回のモデル構成・Dataset構成に影響する設定については、
+公式実装のデフォルト値と挙動を確認し、
+採用する値を明示的に設定する。
+
+特に以下は確認対象とする。
+
+```text
+positional_embedding
+n_modes
+hidden_channels
+lifting_channels
+projection_channels
+n_layers
+domain_padding
+activation
+```
+
+公式ライブラリのバージョン変更によって
+意図せずモデル構造が変化しないよう注意する。
+
+
+### Positional embedding
+
+現在のDatasetでは入力チャネルとして、
+
+```text
+x
+y
+```
+
+の座標情報を明示的に与えている。
+
+したがって、
+FNO内部でgrid positional embeddingを追加すると
+位置情報が重複する可能性がある。
+
+Dataset側でx,yを入力する構成では、
+FNO側の自動positional embeddingを使用しない構成を基本とする。
+
+将来Dataset側からx,yを除去して
+FNO側のpositional embeddingを使用する場合は、
+DatasetとModelの両方の設定を整合させること。
+
+
+### Forward
+
+FNOのforward処理そのものは
+`neuralop.models.FNO` の公式実装を使用する。
+
+FNOV2側でSpectralConvやFNOBlocksのforward処理を
+重複実装しない。
+
+基本的な入出力は、
+
+```text
+input
+[B, C_in, H, W]
+
+    ↓
+neuralop FNO
+
+output
+[B, C_out, H, W]
+```
+
+とする。
+
+
+### Model sanity check
+
+Model実装後、学習へ進む前に最低限以下を確認する。
+
+1. Dataset / DataLoaderから得られるTensorをそのまま入力できること
+2. input shapeが `[B, C_in, H, W]` であること
+3. output shapeが `[B, C_out, H, W]` であること
+4. `C_in` がDatasetのinput_channels数と一致すること
+5. `C_out` がDatasetのoutput_channels数と一致すること
+6. forward passが正常に完了すること
+7. outputにNaN / Infが存在しないこと
+8. backward passを1回実行できること
+9. Datasetのinput_channelsを変更した場合にModelが追従すること
+10. 使用しているFNO設定値を実行時に確認できること
+
+
+### Reproducibility
+
+使用している `neuralop` のバージョンを記録すること。
+
+モデルの再現に必要な設定は、
+コード内の暗黙的なデフォルト値だけに依存させず、
+可能な範囲でYAMLおよび実験記録から確認できる状態にする。
+
+
+### Single Source of Truth
+
+既に他の設定ファイルで定義されている値を
+`model.yaml`へ重複して定義しない。
+
+特に、
+
+```text
+input_channels
+output_channels
+normalization条件
+空間解像度
+train / validation split
+```
+
+などはModel固有の設定ではないため、
+Model側で独立して管理しない。
+
+Modelは必要な情報を上流の設定から参照し、
+FNO固有の設定のみを管理する。
+
+### Model summary / visualization
+
+`model.py` を単体実行した際に、
+生成されたモデルの基本情報を確認できるようにする。
+
+最低限、以下を表示する。
+
+```text
+model name
+implementation
+neuralop version
+in_channels
+out_channels
+n_modes
+hidden_channels
+lifting_channels
+projection_channels
+n_layers
+positional_embedding
+domain_padding
+total parameters
+trainable parameters
+```
+
+表示例：
+
+```text
+=== Model Summary ===
+model                  : FNO
+implementation         : neuralop
+neuralop version       : ...
+input channels         : 7
+output channels        : 3
+n_modes                : [12, 12]
+hidden_channels        : 32
+lifting_channels       : ...
+projection_channels    : ...
+n_layers               : 4
+positional_embedding   : disabled
+domain_padding         : ...
+total parameters       : ...
+trainable parameters   : ...
+```
+
+モデル名および各設定値は実際に生成されたモデルおよびYAML設定と整合していること。
+表示専用の値を別途ハードコードしない。
+
+
+### Model architecture visualization
+
+モデル構造を確認できる機能を用意する。
+
+少なくとも、PyTorchのモデル構造をテキスト形式で確認できるようにする。
+
+```text
+FNO
+├── lifting
+├── FNO blocks
+│   ├── block 0
+│   ├── block 1
+│   ├── ...
+│   └── block N
+└── projection
+```
+
+可能であれば、入力Tensorを用いたモデルsummaryも表示し、
+
+```text
+Input:
+[B, C_in, H, W]
+
+Output:
+[B, C_out, H, W]
+```
+
+および各主要層の入出力shapeを確認できるようにする。
+
+また、モデル構造を画像またはグラフとして保存できる可視化機能を持たせることが望ましい。
+
+可視化機能は学習処理そのものに必須とせず、
+デバッグ・モデル確認用の機能として分離する。
+
+可視化のON/OFFおよび保存先はYAMLから変更可能な構造とする。
+
+例：
+
+```yaml
+debug:
+  print_summary: true
+
+visualization:
+  enabled: true
+  output_dir: outputs/model
+```
+
+可視化ライブラリを追加する場合は、
+そのライブラリが利用できないことによって
+通常のmodel生成や学習が失敗しない構造とする。
+
+
+### Model sanity check output
+
+`model.py` の単体実行時には、
+
+```text
+model生成
+    ↓
+model summary
+    ↓
+architecture確認
+    ↓
+dummyまたはDataLoader由来のinputでforward
+    ↓
+input/output shape確認
+    ↓
+finite check
+    ↓
+backward check
+```
+
+の順に確認できるようにする。
+
+最終的に少なくとも以下のような結果が確認できること。
+
+```text
+model: FNO
+input shape : (8, 7, 64, 256)
+output shape: (8, 3, 64, 256)
+finite check: passed
+backward check: passed
+```
 ### 実装上の原則
 
 DataLoader実装時は、既存の`dataset.py`および

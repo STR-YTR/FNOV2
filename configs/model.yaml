@@ -1,0 +1,44 @@
+model:
+  name: FNO
+  implementation: neuralop
+
+  # 入出力チャネル数はdataset.yamlのチャネルリストから自動導出する。
+  dataset_config: dataset.yaml
+  dataloader_config: dataloader.yaml
+
+  n_modes: [12, 12]
+  hidden_channels: 32
+  lifting_channels: 64
+  projection_channels: 64
+  n_layers: 4
+  activation: gelu
+
+  # Datasetがx/yを明示的に入力するため、FNO内部のgrid embeddingは無効にする。
+  positional_embedding: null
+  domain_padding: 0.0
+
+  norm: null
+  use_channel_mlp: true
+  channel_mlp_dropout: 0.0
+  channel_mlp_expansion: 0.5
+  channel_mlp_skip: soft-gating
+  fno_skip: linear
+  fno_block_precision: full
+  factorization: null
+  rank: 1.0
+  fixed_rank_modes: false
+  weight_implementation: factorized
+  separable: false
+  preactivation: false
+
+debug:
+  print_summary: true
+  print_architecture: true
+  sanity_check: true
+  # CPUでも軽量にforward/backwardを確認するため、取得batchの先頭だけを使用する。
+  sample_batch_size: 1
+
+visualization:
+  # 有効時は外部ライブラリを使わず、完全なPyTorchモデル構造をテキスト保存する。
+  enabled: false
+  output_path: ../outputs/model/fno_architecture.txt

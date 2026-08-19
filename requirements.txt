@@ -2,3 +2,4 @@ numpy
 pyvista
 PyYAML
 torch
+neuraloperator==2.0.0
