@@ -3,3 +3,4 @@ pyvista
 PyYAML
 torch
 neuraloperator==2.0.0
+wandb==0.28.2

@@ -17,6 +17,7 @@ model:
   positional_embedding: null
   domain_padding: 0.0
 
+
   norm: null
   use_channel_mlp: true
   channel_mlp_dropout: 0.0

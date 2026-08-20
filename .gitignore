@@ -4,3 +4,6 @@ data/VTK/**
 data/processed/**
 !data/README.md
 src/__pycache__/*.pyc
+outputs/
+checkpoints/
+logs/

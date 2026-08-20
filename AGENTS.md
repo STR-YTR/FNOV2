@@ -1260,6 +1260,801 @@ output shape: (8, 3, 64, 256)
 finite check: passed
 backward check: passed
 ```
+
+## Training
+
+`src/train.py` は、既に実装されている Dataset / DataLoader / Model を利用して、
+FNOの学習、validation、評価指標の計算、checkpoint保存、学習状況の記録を行う。
+
+Training側でDataset、DataLoader、Modelの処理を再実装しない。
+
+基本的な処理フローは以下とする。
+
+```text
+Dataset
+   ↓
+DataLoader
+   ↓
+FNO Model
+   ↓
+Forward
+   ↓
+Loss
+   ↓
+Backward
+   ↓
+Optimizer step
+   ↓
+Validation
+   ↓
+Logging
+   ↓
+Checkpoint
+```
+
+
+### Baseline Training
+
+初期baselineでは以下の条件を基本とする。
+
+```text
+epochs        : 30
+loss          : MSE
+optimizer     : Adam
+learning rate : 5e-4
+weight decay  : 0.0
+scheduler     : none
+```
+
+初回の30 epochは最終的な学習条件を確定するための本学習ではなく、
+学習パイプライン全体が正常に機能し、
+train / validationの損失が適切に推移することを確認するためのbaseline runとする。
+
+必要に応じて本格的な30 epoch学習の前に、
+1〜2 epochの短時間runで動作確認を行えるようにする。
+
+初期baselineでは、
+
+```text
+scheduler
+early stopping
+gradient clipping
+mixed precision
+```
+
+などを必須としない。
+
+これらはbaselineの学習曲線を確認した後、
+必要性を判断して追加・比較する。
+
+
+## train.yaml
+
+Training固有の設定は `configs/train.yaml` を正本として管理する。
+
+例：
+
+```yaml
+training:
+  epochs: 30
+
+loss:
+  name: mse
+
+optimizer:
+  name: adam
+  learning_rate: 0.0005
+  weight_decay: 0.0
+
+scheduler:
+  name: none
+
+checkpoint:
+  save_best: true
+  save_last: true
+  monitor: val_loss
+  mode: min
+
+logging:
+  wandb:
+    enabled: true
+    project: FNOV2
+    entity: null
+    run_name: baseline
+    mode: online
+    log_every_n_epochs: 1
+
+runtime:
+  device: auto
+  seed: 42
+```
+
+各値は将来的にYAMLから変更可能な構造とし、
+実験条件をPythonコードへ固定的にハードコードしない。
+
+
+## Single Source of Truth
+
+既に他の設定ファイルで定義されている値を
+`train.yaml`へ重複して記載しない。
+
+DataLoader固有の、
+
+```text
+batch_size
+train_shuffle
+val_shuffle
+num_workers
+pin_memory
+train / validation split
+```
+
+などはDataLoader側の設定を参照する。
+
+Model固有の、
+
+```text
+n_modes
+hidden_channels
+lifting_channels
+projection_channels
+n_layers
+activation
+positional_embedding
+domain_padding
+```
+
+などはModel側の設定を参照する。
+
+Dataset固有の、
+
+```text
+input_channels
+output_channels
+normalization
+standardization
+```
+
+などもDataset側の設定を参照する。
+
+Trainingは上流設定を利用し、
+学習固有の条件のみを管理する。
+
+
+## Loss
+
+baselineの学習損失にはMean Squared Error（MSE）を使用する。
+
+```text
+loss = MSE(prediction, target)
+```
+
+現在のDatasetでは、
+u, v, pがtrainデータの統計量によって標準化されているため、
+MSEは標準化後のpredictionとtargetに対して計算する。
+
+学習用Lossと性能評価指標は区別する。
+
+```text
+Optimization:
+MSE
+
+Evaluation:
+MSE
+Relative L2
+```
+
+を基本とする。
+
+
+## Optimizer
+
+baselineではAdam optimizerを使用する。
+
+初期learning rateは、
+
+```text
+5e-4
+```
+
+とする。
+
+初期baselineではschedulerを使用せず、
+30 epochを一定learning rateで学習する。
+
+```text
+optimizer : Adam
+lr        : 5e-4
+scheduler : none
+```
+
+learning rateやoptimizerはYAMLから変更可能とし、
+将来的な比較実験に対応できる構造とする。
+
+
+## Training Loop
+
+各epochでは以下の順序で処理する。
+
+```text
+model.train()
+
+for batch in train_loader:
+
+    input / target取得
+
+        ↓
+
+    optimizer.zero_grad()
+
+        ↓
+
+    prediction = model(input)
+
+        ↓
+
+    loss計算
+
+        ↓
+
+    backward
+
+        ↓
+
+    optimizer.step()
+
+        ↓
+
+    metric集計
+
+        ↓
+
+epoch終了
+
+        ↓
+
+validation
+
+        ↓
+
+logging
+
+        ↓
+
+checkpoint判定
+```
+
+Validationデータをoptimizerの更新に使用してはならない。
+
+
+## Validation
+
+各epoch終了後にvalidationを実行する。
+
+validationでは、
+
+```text
+model.eval()
+```
+
+を使用し、
+勾配計算を無効化する。
+
+最低限、
+
+```text
+Validation MSE
+Validation Relative L2
+```
+
+を計算する。
+
+Validation結果は、
+
+```text
+学習状況の確認
+過学習の確認
+モデル性能の確認
+best checkpointの選択
+```
+
+に使用する。
+
+
+## Metrics
+
+各epochについて最低限以下を計算・記録する。
+
+```text
+Train:
+- MSE
+- Relative L2
+
+Validation:
+- MSE
+- Relative L2
+```
+
+本研究は回帰問題であるため、
+classificationで使用されるaccuracyを主要指標とはしない。
+
+Validation性能の主要指標には、
+
+```text
+Validation MSE
+Validation Relative L2
+```
+
+を使用する。
+
+将来的には必要に応じて、
+
+```text
+u Relative L2
+v Relative L2
+p Relative L2
+```
+
+など変数別の評価指標を追加可能な構造とする。
+
+
+## Console Output
+
+学習が正常に進んでいることをターミナルから確認できるよう、
+各epoch終了時に学習状況をprintする。
+
+最低限以下を表示する。
+
+```text
+Epoch
+Train Loss
+Validation Loss
+Train Relative L2
+Validation Relative L2
+Learning Rate
+Best Validation Loss
+Epoch Time
+```
+
+表示例：
+
+```text
+Epoch [001/030]
+  train_loss      : 1.234567e-02
+  val_loss        : 1.456789e-02
+  train_rel_l2    : 8.123456e-02
+  val_rel_l2      : 9.012345e-02
+  learning_rate   : 5.000000e-04
+  best_val_loss   : 1.456789e-02
+  epoch_time      : 12.4 s
+```
+
+これにより、
+
+```text
+Epoch 1
+Epoch 2
+Epoch 3
+...
+```
+
+と学習が実際に進行していることを確認可能にする。
+
+batchごとに大量のprintを行わず、
+基本的にはepoch単位で表示する。
+
+
+## Weights & Biases
+
+学習状況のリアルタイム監視および実験管理には、
+Weights & Biases（W&B）を使用する。
+
+W&Bはlogging機能として扱い、
+W&Bが無効でも通常の学習が実行可能な構造とする。
+
+
+### W&B Logging
+
+各epoch終了時に最低限以下をW&Bへ記録する。
+
+```text
+epoch
+
+train/loss
+val/loss
+
+train/relative_l2
+val/relative_l2
+
+learning_rate
+epoch_time
+```
+
+これによりW&B上で、
+
+```text
+Epoch vs Train MSE
+Epoch vs Validation MSE
+
+Epoch vs Train Relative L2
+Epoch vs Validation Relative L2
+
+Epoch vs Learning Rate
+```
+
+をリアルタイムで確認可能にする。
+
+TrainとValidationの同じ指標について、
+学習曲線を比較しやすい形で記録する。
+
+
+### W&B Configuration
+
+1回の学習を1つのW&B Runとして管理する。
+
+各Runには、
+実際に使用した実験条件をW&B configとして保存する。
+
+最低限以下を記録する。
+
+```text
+Dataset
+- input_channels
+- output_channels
+- normalization settings
+
+DataLoader
+- train Re cases
+- validation Re cases
+- batch_size
+
+Model
+- model name
+- neuralop version
+- n_modes
+- hidden_channels
+- lifting_channels
+- projection_channels
+- n_layers
+- activation
+- positional_embedding
+- parameter count
+
+Training
+- epochs
+- loss
+- optimizer
+- learning_rate
+- weight_decay
+- scheduler
+- seed
+```
+
+W&B用としてこれらを手作業で再入力しない。
+
+既存のDataset / DataLoader / Model / Train設定から
+自動的にW&B configへ渡す。
+
+
+### W&B Run Name
+
+各実験を識別できるよう、
+Run Nameを設定可能にする。
+
+例：
+
+```text
+baseline
+baseline_lr1e-3
+no_re
+dropout_01
+modes_16
+```
+
+Run Nameは識別用とし、
+実際の実験条件の正本にはしない。
+
+実際の設定値はYAMLおよびW&B configに保存する。
+
+
+### W&B Failure Handling
+
+W&Bは学習そのものへの必須依存としない。
+
+以下の場合でも学習およびcheckpoint保存が継続できる構造とする。
+
+```text
+W&B disabled
+ネットワーク切断
+W&B logging error
+offline環境
+```
+
+必要に応じて、
+
+```yaml
+logging:
+  wandb:
+    enabled: false
+```
+
+または、
+
+```yaml
+logging:
+  wandb:
+    mode: offline
+```
+
+を使用可能にする。
+
+
+## Checkpoint
+
+学習中にcheckpointを保存する。
+
+最低限、
+
+```text
+best checkpoint
+last checkpoint
+```
+
+を保存可能にする。
+
+
+### Best Checkpoint
+
+baselineでは、
+
+```text
+Validation MSE Lossが最小
+```
+
+となったepochをbest modelとする。
+
+各epoch終了後、
+
+```text
+current val_loss < best val_loss
+```
+
+の場合にbest checkpointを更新する。
+
+更新時には、
+
+```text
+[checkpoint] new best model saved
+```
+
+などのメッセージをターミナルへ表示する。
+
+
+### Checkpoint Contents
+
+checkpointには最低限以下を保存する。
+
+```text
+model state
+optimizer state
+epoch
+train loss
+validation loss
+best validation loss
+```
+
+加えて、
+モデルおよび学習条件を後から再現できる情報を保持する。
+
+checkpoint保存はW&Bから独立して実行する。
+
+W&Bへの通信失敗によって、
+学習済みcheckpointが失われてはならない。
+
+
+## Training History / Curves
+
+W&Bによるリアルタイム監視を基本とするが、
+学習履歴はローカルにも保持する。
+
+最低限、
+
+```text
+epoch
+train_loss
+val_loss
+train_relative_l2
+val_relative_l2
+learning_rate
+epoch_time
+```
+
+を後から参照可能にする。
+
+必要に応じて学習終了後、
+
+```text
+loss_curve.png
+relative_l2_curve.png
+```
+
+などの静的な学習曲線を生成可能な構造とする。
+
+可視化処理の失敗によって、
+checkpointや学習結果が失われないようにする。
+
+
+## Output Directory
+
+各実験の出力を混在させない。
+
+例えば、
+
+```text
+outputs/
+└── baseline/
+    ├── checkpoints/
+    │   ├── best.pt
+    │   └── last.pt
+    │
+    ├── history/
+    │   └── history.*
+    │
+    └── plots/
+        ├── loss_curve.png
+        └── relative_l2_curve.png
+```
+
+のように実験単位で管理する。
+
+既存runの結果を誤って上書きしない構造とする。
+
+
+## Training Start Summary
+
+学習開始時に、
+今回実行する主要条件をターミナルへ表示する。
+
+最低限以下を表示する。
+
+```text
+device
+model name
+parameter count
+
+train samples
+validation samples
+batch size
+
+epochs
+loss
+optimizer
+learning rate
+weight decay
+scheduler
+
+W&B project
+W&B run name
+checkpoint directory
+```
+
+表示例：
+
+```text
+=== Training Configuration ===
+
+device          : cuda
+
+model           : FNO
+parameters      : 357,603
+
+train samples   : 2100
+val samples     : 400
+batch size      : 8
+
+epochs          : 30
+loss            : MSE
+optimizer       : Adam
+learning rate   : 5.0e-4
+weight decay    : 0.0
+scheduler       : none
+
+wandb project   : FNOV2
+wandb run       : baseline
+
+checkpoint dir  : outputs/baseline/checkpoints
+```
+
+これにより、
+学習開始前に設定ミスを目視確認できるようにする。
+
+
+## Training Sanity Check
+
+本格的な30 epoch学習の前に、
+1〜2 epochの短時間runで動作確認可能にする。
+
+最低限以下を確認する。
+
+1. DataLoaderからbatchを取得できる
+2. input / target shapeが正しい
+3. Model forwardが成功する
+4. MSEが有限値である
+5. backwardが成功する
+6. optimizer.step()が成功する
+7. model parameterが実際に更新される
+8. validationが正常に実行される
+9. Relative L2が計算できる
+10. NaN / Infが発生しない
+11. epoch console outputが正常に表示される
+12. W&B Runが開始される
+13. W&Bへtrain / val metricsが記録される
+14. W&B上で学習曲線が更新される
+15. best checkpointが保存される
+16. last checkpointが保存される
+17. 保存したcheckpointを再度loadできる
+
+
+## Reproducibility
+
+Trainingでは再現性を可能な限り確保する。
+
+seedは設定ファイルから取得し、
+使用する乱数生成器へ適切に反映する。
+
+使用した、
+
+```text
+Dataset config
+DataLoader config
+Model config
+Train config
+neuralop version
+PyTorch version
+```
+
+などを後から確認できる状態にする。
+
+
+## Training Implementation Principles
+
+`train.py` は学習処理を担当し、
+既存モジュールの責務を重複して持たない。
+
+以下をTraining側で再実装しない。
+
+```text
+Datasetの読み込み処理
+Normalization / Standardization
+train / validation split
+DataLoaderのbatch生成
+FNO内部構造
+Model forwardの独自再実装
+```
+
+Trainingは、
+
+```text
+Dataset
+DataLoader
+Model
+```
+
+の既存実装を利用し、
+
+```text
+Optimization
+Validation
+Metrics
+Logging
+Checkpoint
+```
+
+を担当する。
+
+実験条件は可能な限りYAMLから変更可能とし、
+実験ごとにPythonコードを書き換える設計を避ける。
+
 ### 実装上の原則
 
 DataLoader実装時は、既存の`dataset.py`および
