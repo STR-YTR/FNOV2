@@ -1,0 +1,59 @@
+training:
+  model_config: model.yaml
+  epochs: 2
+  seed: 42
+  device: cuda
+  deterministic: false
+  gradient_clip_norm: null
+  resume_checkpoint: null
+
+optimizer:
+  type: adam
+  learning_rate: 0.0005
+  weight_decay: 0.0
+
+scheduler:
+  type:  none
+  min_learning_rate:
+
+loss:
+  # baselineはstandardized u/v/pに対する全格子点MSE。
+  type: mse
+  valid_region_only: false
+
+output:
+  directory: ../outputs/training/baseline
+  checkpoint_interval: 10
+
+wandb:
+  enabled: true
+  project: fnov2-cylinder-wake
+  entity: null
+  name: null
+  group: baseline
+  job_type: train
+  tags:
+    - fno
+    - baseline
+    - one-step
+  notes: Baseline FNO one-step prediction
+
+  # online: クラウドへ同期、offline: ローカル保存のみ、disabled: W&B無効。
+  mode: online
+  save_code: true
+  log_interval_steps: 10
+
+  # 同じW&B runを再開する場合にrun_idを設定する。
+  run_id: null
+  resume: allow
+
+  watch:
+    enabled: false
+    log: all
+    log_freq: 100
+
+  log_best_checkpoint: true
+  artifact_name: fnov2-fno-baseline
+
+  # smoke testは通常クラウドへ送信しない。
+  log_smoke_test: false
