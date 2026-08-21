@@ -1,8 +1,8 @@
 training:
   model_config: model.yaml
-  epochs: 2
+  epochs: 100
   seed: 42
-  device: cuda
+  device: auto
   deterministic: false
   gradient_clip_norm: null
   resume_checkpoint: null

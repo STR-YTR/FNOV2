@@ -105,6 +105,21 @@ def mse_loss(prediction: torch.Tensor, target: torch.Tensor, x: torch.Tensor,
     return selected.mean()
 
 
+def relative_l2_components(prediction: torch.Tensor, target: torch.Tensor,
+                           x: torch.Tensor, input_channels: tuple[str, ...],
+                           valid_region_only: bool) -> tuple[torch.Tensor, torch.Tensor]:
+    """Relative L2のepoch集計に使う二乗誤差和とtarget二乗和を返す。"""
+    error = (prediction - target).square()
+    target_energy = target.square()
+    if valid_region_only:
+        if "mask" not in input_channels:
+            raise ValueError("loss.valid_region_only=true requires mask in input_channels")
+        mask = x[:, input_channels.index("mask")].bool().unsqueeze(1).expand_as(error)
+        error = error.masked_select(mask)
+        target_energy = target_energy.masked_select(mask)
+    return error.sum(), target_energy.sum()
+
+
 def run_epoch(model, loader, device, valid_region_only, optimizer=None,
               gradient_clip_norm: float | None = None, max_batches: int | None = None,
               wandb_run=None, log_interval: int = 0, global_step: int = 0):
@@ -112,6 +127,8 @@ def run_epoch(model, loader, device, valid_region_only, optimizer=None,
     model.train(training)
     total_loss = 0.0
     total_samples = 0
+    total_squared_error = 0.0
+    total_target_energy = 0.0
     input_channels = loader.dataset.input_channels
     context = torch.enable_grad() if training else torch.no_grad()
     with context:
@@ -124,6 +141,9 @@ def run_epoch(model, loader, device, valid_region_only, optimizer=None,
                 optimizer.zero_grad(set_to_none=True)
             prediction = model(x)
             loss = mse_loss(prediction, target, x, input_channels, valid_region_only)
+            squared_error, target_energy = relative_l2_components(
+                prediction.detach(), target, x, input_channels, valid_region_only,
+            )
             if not torch.isfinite(loss):
                 raise ValueError(f"Non-finite loss at batch {batch_index}")
             if training:
@@ -139,9 +159,14 @@ def run_epoch(model, loader, device, valid_region_only, optimizer=None,
                     }, step=global_step)
             total_loss += float(loss.detach()) * len(x)
             total_samples += len(x)
+            total_squared_error += float(squared_error)
+            total_target_energy += float(target_energy)
     if total_samples == 0:
         raise ValueError("DataLoader produced no samples")
-    return total_loss / total_samples, global_step
+    if total_target_energy <= 0.0:
+        raise ValueError("Relative L2 is undefined because target energy is zero")
+    relative_l2 = (total_squared_error / total_target_energy) ** 0.5
+    return total_loss / total_samples, relative_l2, global_step
 
 
 def git_commit(project_root: Path) -> str | None:
@@ -207,6 +232,8 @@ def initialize_wandb(setting: dict[str, Any], config_paths: list[Path],
     run.define_metric("epoch")
     run.define_metric("train/epoch_loss", step_metric="epoch")
     run.define_metric("val/epoch_loss", step_metric="epoch")
+    run.define_metric("train/relative_l2", step_metric="epoch")
+    run.define_metric("val/relative_l2", step_metric="epoch")
     run.define_metric("learning_rate", step_metric="epoch")
     return run
 
@@ -303,31 +330,38 @@ def train(config_path: str | Path, smoke_test: bool = False) -> None:
 
     for epoch in range(start_epoch, epochs + 1):
         started = time.perf_counter()
-        train_loss, global_step = run_epoch(
+        train_loss, train_relative_l2, global_step = run_epoch(
             model, train_loader, device, valid_region_only, optimizer, clip, max_batches,
             wandb_run, log_interval, global_step,
         )
-        val_loss, _ = run_epoch(
+        val_loss, val_relative_l2, _ = run_epoch(
             model, val_loader, device, valid_region_only, max_batches=max_batches,
         )
         learning_rate = optimizer.param_groups[0]["lr"]
         if scheduler:
             scheduler.step()
         elapsed = time.perf_counter() - started
-        row = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
-               "learning_rate": learning_rate, "elapsed_seconds": elapsed}
-        history.append(row)
-        print(f"epoch {epoch:04d} | train={train_loss:.6e} | val={val_loss:.6e} | "
-              f"lr={learning_rate:.3e} | {elapsed:.1f}s")
-        if wandb_run is not None:
-            wandb_run.log({
-                "epoch": epoch, "train/epoch_loss": train_loss,
-                "val/epoch_loss": val_loss, "learning_rate": learning_rate,
-                "epoch_seconds": elapsed,
-            }, step=global_step)
         improved = val_loss < best_val_loss
         if improved:
             best_val_loss = val_loss
+        row = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+               "train_relative_l2": train_relative_l2,
+               "val_relative_l2": val_relative_l2,
+               "learning_rate": learning_rate, "elapsed_seconds": elapsed}
+        history.append(row)
+        print(f"epoch {epoch:04d} | train={train_loss:.6e} | val={val_loss:.6e} | "
+              f"train_rel_l2={train_relative_l2:.6e} | "
+              f"val_rel_l2={val_relative_l2:.6e} | lr={learning_rate:.3e} | "
+              f"best_val={best_val_loss:.6e} | {elapsed:.1f}s")
+        if wandb_run is not None:
+            wandb_run.log({
+                "epoch": epoch, "train/epoch_loss": train_loss,
+                "val/epoch_loss": val_loss,
+                "train/relative_l2": train_relative_l2,
+                "val/relative_l2": val_relative_l2,
+                "learning_rate": learning_rate,
+                "epoch_seconds": elapsed,
+            }, step=global_step)
         if not smoke_test:
             save_checkpoint(output_dir / "last.pt", model, optimizer, scheduler,
                             epoch, best_val_loss, global_step, config, commit)
