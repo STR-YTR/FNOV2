@@ -2376,6 +2376,390 @@ performance評価では、
 特に、
 interpolation / extrapolationの違いだけを理由として
 ほぼ同一のDataset・DataLoader・testコードを複製しないこと。
+
+## Performance One-Step Test
+
+`performance/src/test.py` は、学習済みFNOモデルに対して未学習Reの1-step予測性能を評価するためのスクリプトとする。
+
+interpolation / extrapolationで別々のtestスクリプトを作成せず、共通の`test.py`を使用する。
+
+評価対象の種類、データディレクトリ、Reynolds numberはperformance用YAMLから切り替える。
+
+
+### 基本処理フロー
+
+```text
+test config
+   ↓
+test_dataloader.py
+   ↓
+test_loader
+   ↓
+best checkpoint load
+   ↓
+model.eval()
+   ↓
+1-step inference
+   ↓
+inverse transform
+   ↓
+MSE / Relative L2
+   ↓
+prediction / ground truth保存
+   ↓
+代表時刻のみ可視化
+```
+
+test処理ではモデルの重みを更新しない。
+
+必ず推論モードを使用し、勾配計算を無効化する。
+
+
+### Test Metrics
+
+1-step性能の主要評価指標は以下とする。
+
+- MSE
+- Relative L2
+
+評価値はtest対象の全サンプルを使用して計算する。
+
+例えば、1つのReケースについて100 pairs存在する場合、100サンプルすべてをmetric計算対象とする。
+
+可能であれば以下を保存する。
+
+- overall MSE
+- overall Relative L2
+- u MSE
+- v MSE
+- p MSE
+- u Relative L2
+- v Relative L2
+- p Relative L2
+
+評価値については、標準化空間で計算したものなのか、inverse transform後の物理量で計算したものなのかを明確にすること。
+
+研究結果として使用するmetricについては、どのスケールで算出した値か必ず記録する。
+
+
+### Test Result Storage
+
+各Reの1-step予測結果は、後から再推論せず可視化・追加解析できるよう保存する。
+
+想定構成：
+
+```text
+performance/
+└── results/
+    └── interpolation/
+        └── one_step/
+            ├── metrics.csv
+            ├── metrics.json
+            ├── 1step_Re35.pt
+            ├── 1step_Re85.pt
+            ├── 1step_Re135.pt
+            ├── 1step_Re185.pt
+            └── 1step_Re235.pt
+```
+
+extrapolationの場合も同様に、
+
+```text
+performance/results/extrapolation/one_step/
+```
+
+へ保存する。
+
+`1step_ReXX.pt`には最低限以下を保存する。
+
+- prediction
+- ground truth
+- Re
+- time / step information
+- mask
+- 必要なmetadata
+
+predictionとground truthは、後からu / v / pの可視化や誤差場計算が可能な形式で保存する。
+
+保存するpredictionが標準化後なのかinverse transform後なのかをmetadataで明確にする。
+
+可能であれば、可視化や物理的評価に直接利用できるよう、inverse transform後の物理量を保存することを優先する。
+
+
+### Visualization Policy
+
+metric計算にはtest対象の全サンプルを使用する。
+
+一方、100サンプルすべてを静止画として可視化する必要はない。
+
+可視化は代表時刻のみを抽出する。
+
+1つのReについて100サンプル存在する場合、基本的には時間範囲から等間隔に5点程度を選択する。
+
+代表点は概念的に以下とする。
+
+- 開始付近
+- 25%地点
+- 50%地点
+- 75%地点
+- 終了付近
+
+100サンプルの場合の例：
+
+```text
+sample 0
+sample 25
+sample 50
+sample 75
+sample 99
+```
+
+ただし、固定indexをPythonコードへ直接ハードコードするのではなく、実際のサンプル数に応じて等間隔に自動選択できる実装を優先する。
+
+
+### Maximum Error Visualization
+
+等間隔の代表時刻に加えて、1-step Relative L2が最大となるサンプルを自動的に検出し、可視化対象へ追加する。
+
+これにより、
+
+```text
+時間的に均等な代表場
++
+最も予測誤差が大きかった場
+```
+
+の両方を確認可能にする。
+
+最大誤差サンプルがすでに等間隔代表点に含まれている場合は、重複して画像生成しない。
+
+
+### Visualization Contents
+
+代表時刻について最低限以下を比較可能にする。
+
+- Ground Truth
+- Prediction
+- Absolute Error
+
+対象物理量は以下とする。
+
+- u
+- v
+- p
+
+各物理量について、Ground Truth / Prediction / Absolute Errorの空間分布を確認できるようにする。
+
+可視化処理はtestのmetric計算・prediction保存と可能な限り分離する。
+
+画像生成処理に失敗した場合でも、metric計算結果や`.pt`ファイルが失われない構造にする。
+
+
+### Visualization Output
+
+例えばRe=85の場合、以下のようにReごとに可視化結果を追跡できる構造とする。
+
+```text
+performance/
+└── results/
+    └── interpolation/
+        └── one_step/
+            ├── 1step_Re85.pt
+            └── plots/
+                └── Re85/
+                    ├── sample000_u.png
+                    ├── sample000_v.png
+                    ├── sample000_p.png
+                    ├── sample025_u.png
+                    ├── sample025_v.png
+                    ├── sample025_p.png
+                    ├── ...
+                    └── max_error_*.png
+```
+
+ファイル名には少なくとも以下が分かる情報を含める。
+
+- Re
+- sample indexまたはtime
+- physical variable
+
+後からどの条件・どの時刻・どの物理量の結果か判別できる命名にする。
+
+
+### Interpolation / Extrapolation
+
+同じ`test.py`を用いて、interpolation / extrapolationをYAMLから切り替える。
+
+例：
+
+```yaml
+evaluation:
+  type: interpolation
+
+data:
+  directory: ../data/interpolation
+
+test_re:
+  - 35
+  - 85
+  - 135
+  - 185
+  - 235
+```
+
+外挿では例えば、
+
+```yaml
+evaluation:
+  type: extrapolation
+
+data:
+  directory: ../data/extrapolation
+
+test_re:
+  - 260
+  - 275
+  - 300
+```
+
+のように指定する。
+
+コードを複製して`interpolation_test.py`と`extrapolation_test.py`を別々に作成しない。
+
+コードは共通化し、データ・設定・結果のみを分離する。
+
+
+### Normalization / Standardization
+
+test時にも学習時と完全に同じ変換条件を使用する。
+
+testデータ自身からmean / stdを計算してはならない。
+
+基本方針：
+
+```text
+mask
+→ 学習時と同じ処理
+
+Re
+→ 学習時と同じscale
+
+x / y
+→ 学習時と同じscale
+
+u / v / p
+→ train統計量でstandardization
+```
+
+外挿時もscaleを変更しない。
+
+例えば学習時に、
+
+```text
+Re_scaled = Re / 250
+```
+
+を使用した場合、
+
+```text
+Re260 -> 1.04
+Re275 -> 1.10
+Re300 -> 1.20
+```
+
+としてそのまま入力する。
+
+外挿データに合わせてReのscale値を変更してはならない。
+
+u / v / pについても、performanceデータ自身から新しいmean / stdを算出せず、学習時に確定したtrain統計量を使用する。
+
+
+### Test Sanity Check
+
+test実装後は最低限以下を確認する。
+
+1. 指定したcheckpointが正常にloadされる
+2. modelがeval modeになっている
+3. gradient計算が無効である
+4. 指定したtest Reのみが使用される
+5. train / validationデータが混入していない
+6. train統計量によるNormalization / Standardizationが使用されている
+7. input / output shapeが正しい
+8. predictionにNaN / Infが存在しない
+9. MSEを全test sampleで計算できる
+10. Relative L2を全test sampleで計算できる
+11. Reごとの結果が独立して保存される
+12. `1step_ReXX.pt`が正常に再読み込みできる
+13. inverse transformが正常に機能する
+14. 等間隔代表点が正しく選択される
+15. 最大誤差sampleが正しく検出される
+16. 可視化処理の失敗がmetric / prediction保存へ影響しない
+
+
+### Console Output
+
+test実行時には、最低限以下をターミナルへ表示する。
+
+例：
+
+```text
+=== One-Step Performance Test ===
+evaluation : interpolation
+checkpoint : .../best.pt
+
+Re=85
+samples       : 100
+
+MSE
+overall       : ...
+u             : ...
+v             : ...
+p             : ...
+
+Relative L2
+overall       : ...
+u             : ...
+v             : ...
+p             : ...
+
+saved:
+1step_Re85.pt
+
+visualization samples:
+[0, 25, 50, 75, 99]
+
+maximum error sample:
+index       : ...
+time        : ...
+Relative L2 : ...
+```
+
+複数Reを評価した場合は、最後にReごとの結果を一覧表示できるようにする。
+
+
+### Implementation Principle
+
+one-step performance評価では、
+
+```text
+全testサンプル
+→ quantitative evaluation
+→ MSE / Relative L2
+
+代表5時刻程度
+→ qualitative visualization
+
+最大Relative L2時刻
+→ worst-case visualization
+```
+
+と役割を分ける。
+
+100枚すべてを静止画として生成・確認する設計にはしない。
+
+ただしprediction / ground truth自体は全サンプル保存し、後から任意の時刻を再可視化できる状態を維持する。
+
+また、performance評価は最終評価用であり、このtest結果をtrain / validation処理へフィードバックしてデータを混在させないこと。
 ### 実装上の原則
 
 DataLoader実装時は、既存の`dataset.py`および

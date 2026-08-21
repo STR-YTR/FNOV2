@@ -62,19 +62,32 @@ def _performance_data_dir(config: dict[str, Any], config_path: Path) -> Path:
             f"{expected_root}, got {data_dir}"
         )
     if not data_dir.is_dir():
-        raise FileNotFoundError(f"Test dataset directory does not exist: {data_dir}")
+        raise FileNotFoundError(_missing_data_message(config, data_dir))
     return data_dir
+
+
+def _missing_data_message(config: dict[str, Any], data_dir: Path) -> str:
+    evaluation_type = config["evaluation"]["type"]
+    make_pairs_config = (PROJECT_ROOT / "performance" / "configs" /
+                         f"make_pairs_{evaluation_type}.yaml")
+    return (
+        f"test data was not found under {data_dir}. "
+        "Generate and validate the performance pairs first:\n"
+        f"  python src/make_pairs.py --config {make_pairs_config}\n"
+        f"  python src/validate_pairs.py {data_dir}"
+    )
 
 
 def create_test_dataloader(config_path: str | Path) -> DataLoader:
     config_path = Path(config_path).resolve()
     config = load_config(config_path)
     data_dir = _performance_data_dir(config, config_path)
-    files = sorted(data_dir.glob(config["data"]["file_pattern"]))
+    files = sorted(path.resolve() for path in data_dir.glob(config["data"]["file_pattern"]))
     if not files:
-        raise FileNotFoundError(
-            f"No files matching {config['data']['file_pattern']!r} under {data_dir}"
-        )
+        raise FileNotFoundError(_missing_data_message(config, data_dir))
+    escaped = [path for path in files if not path.is_relative_to(data_dir)]
+    if escaped:
+        raise ValueError(f"Test pair paths escape configured data directory: {escaped}")
 
     dataset_config_path = resolve_path(config["dataset_config"], config_path)
     dataset_config = load_dataset_config(dataset_config_path)
@@ -134,8 +147,12 @@ def main() -> None:
         default=Path(__file__).parents[1] / "configs" / "test_dataloader.yaml",
     )
     config_path = parser.parse_args().config.resolve()
-    test_loader = create_test_dataloader(config_path)
-    print_test_summary(config_path, test_loader)
+    try:
+        test_loader = create_test_dataloader(config_path)
+        print_test_summary(config_path, test_loader)
+    except FileNotFoundError as exc:
+        print(f"[WARNING] {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

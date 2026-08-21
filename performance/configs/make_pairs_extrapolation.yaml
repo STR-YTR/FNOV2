@@ -7,8 +7,10 @@ data:
   # case numbers are local to performance/data/extrapolation.
   reynolds_by_case:
     "0": 260
-    "1": 275
-    "2": 300
+    "1": 270
+    "2": 280
+    "3": 290
+    "4": 300
 
 fields:
   velocity: U

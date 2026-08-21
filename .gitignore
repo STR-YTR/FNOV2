@@ -18,3 +18,4 @@ performance/results/**/*.png
 performance/results/**/*.npy
 performance/results/**/*.vtk
 performance/results/**/*.vti
+__pycache__/

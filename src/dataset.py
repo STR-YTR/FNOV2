@@ -235,6 +235,15 @@ class PairDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         """ファイル順の``(case, Re)``一覧を返す。"""
         return list(zip(self.cases_by_file, self.reynolds_by_file))
 
+    def reynolds_for_sample(self, index: int) -> float:
+        """Dataset全体のsample indexに対応するReynolds数を返す。"""
+        if index < 0:
+            index += len(self)
+        if index < 0 or index >= len(self):
+            raise IndexError(f"Dataset index out of range: {index}")
+        file_index = bisect.bisect_right(self._cumulative_lengths, index)
+        return self.reynolds_by_file[file_index]
+
     @staticmethod
     def _validate_package(package: dict[str, Any], path: Path):
         missing = {"x", "y", "meta"} - package.keys()
