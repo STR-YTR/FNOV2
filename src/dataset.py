@@ -427,6 +427,26 @@ def print_normalization_debug(config_path: Path, dataset: PairDataset,
         raise ValueError("NaN or Inf detected in normalization debug samples")
 
 
+
+def print_performance_test_readiness() -> None:
+    """Performance用test dataがconfigどおり準備済みか1行で表示する。"""
+    project_root = Path(__file__).parents[1]
+    performance_src = project_root / "performance" / "src"
+    test_config = project_root / "performance" / "configs" / "test_dataloader.yaml"
+    if not test_config.is_file():
+        print("performance test data: NOT READY")
+        return
+    import sys
+    if str(performance_src) not in sys.path:
+        sys.path.insert(0, str(performance_src))
+    try:
+        from test_dataloader import create_test_dataloader
+        create_test_dataloader(test_config)
+    except (FileNotFoundError, KeyError, TypeError, ValueError):
+        print("performance test data: NOT READY")
+    else:
+        print("performance test data: READY")
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -445,6 +465,7 @@ def main() -> None:
     debug = config.get("debug", {})
     if debug.get("enabled", False):
         print_normalization_debug(config_path, dataset, int(debug.get("sample_count", 5)))
+    print_performance_test_readiness()
 
 
 if __name__ == "__main__":

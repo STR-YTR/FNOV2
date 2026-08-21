@@ -41,7 +41,8 @@ def load_config(path: Path) -> dict[str, Any]:
     output = config.get("output")
     if not isinstance(output, dict):
         raise ValueError("Missing config section: output")
-    for key in ("root_directory", "metrics_json", "metrics_csv", "extrapolation_plot"):
+    for key in ("root_directory", "metrics_json", "metrics_csv",
+                "interpolation_plot", "extrapolation_plot"):
         if not isinstance(output.get(key), str) or not output[key]:
             raise ValueError(f"output.{key} must be a non-empty string")
     return config
@@ -170,11 +171,10 @@ def evaluate(config_path: str | Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / config["output"]["metrics_json"]
     csv_path = output_dir / config["output"]["metrics_csv"]
-    plot_path = None
-    if evaluation_type == "extrapolation":
-        plot_path = output_dir / config["output"]["extrapolation_plot"]
-        plot_extrapolation_error(result, plot_path)
-        result["extrapolation_plot"] = str(plot_path)
+    plot_key = f"{evaluation_type}_plot"
+    plot_path = output_dir / config["output"][plot_key]
+    plot_reynolds_error(result, plot_path)
+    result[plot_key] = str(plot_path)
     json_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     write_csv(csv_path, result)
     print_summary(result, json_path, csv_path, device, plot_path)
@@ -182,16 +182,24 @@ def evaluate(config_path: str | Path) -> dict[str, Any]:
 
 
 
-def plot_extrapolation_error(result: dict[str, Any], path: Path) -> None:
-    """Re=250からの距離に対するone-step Relative L2をPNGへ保存する。"""
+def plot_reynolds_error(result: dict[str, Any], path: Path) -> None:
+    """Re別のone-step Relative L2をPNGへ保存する。"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    evaluation_type = result["evaluation"]
     reynolds = sorted(float(value) for value in result["metrics_by_re"])
-    distances = [value - 250.0 for value in reynolds]
-    if any(distance <= 0 for distance in distances):
-        raise ValueError("Extrapolation plot requires every test Re to be greater than 250")
+    if evaluation_type == "extrapolation":
+        x_values = [value - 250.0 for value in reynolds]
+        if any(value <= 0 for value in x_values):
+            raise ValueError("Extrapolation plot requires every test Re to be greater than 250")
+        x_label = "Distance from training boundary (Re - 250)"
+        title = "One-step extrapolation error vs. distance from Re=250"
+    else:
+        x_values = reynolds
+        x_label = "Reynolds number"
+        title = "One-step interpolation error by Reynolds number"
 
     fig, axis = plt.subplots(figsize=(8, 5))
     styles = {"all": ("Overall", "o"), "u": ("u", "s"),
@@ -201,24 +209,23 @@ def plot_extrapolation_error(result: dict[str, Any], path: Path) -> None:
                   ["physical/valid_region"][channel]["relative_l2"] for value in reynolds]
         if any(value is None for value in values):
             continue
-        axis.plot(distances, [100.0 * value for value in values], marker=marker,
+        axis.plot(x_values, [100.0 * value for value in values], marker=marker,
                   linewidth=2, label=label)
-    axis.axvline(0.0, color="black", linestyle="--", linewidth=1,
-                 label="Training boundary (Re=250)")
-    for distance, reynolds_value in zip(distances, reynolds):
-        axis.annotate(f"Re={reynolds_value:g}", (distance, 0), xytext=(0, -28),
-                      textcoords="offset points", ha="center", fontsize=8,
-                      annotation_clip=False)
-    axis.set_xlim(left=0.0)
-    axis.set_xlabel("Distance from training boundary (Re - 250)")
+    if evaluation_type == "extrapolation":
+        axis.axvline(0.0, color="black", linestyle="--", linewidth=1,
+                     label="Training boundary (Re=250)")
+        axis.set_xlim(left=0.0)
+    axis.set_xticks(x_values, [f"{value:g}" for value in reynolds])
+    axis.set_xlabel(x_label)
     axis.set_ylabel("Relative L2 error on valid region (%)")
-    axis.set_title("One-step extrapolation error vs. distance from Re=250")
+    axis.set_title(title)
     axis.grid(True, alpha=0.3)
     axis.legend()
     fig.tight_layout()
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
+
 
 def write_csv(path: Path, result: dict[str, Any]) -> None:
     rows = []
@@ -251,7 +258,7 @@ def print_summary(result: dict[str, Any], json_path: Path, csv_path: Path,
     print(f"metrics JSON     : {json_path}")
     print(f"metrics CSV      : {csv_path}")
     if plot_path is not None:
-        print(f"extrapolation PNG: {plot_path}")
+        print(f"metric plot PNG  : {plot_path}")
 
 
 def main() -> None:

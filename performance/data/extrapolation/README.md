@@ -1,3 +1,3 @@
-# Extrapolation data
+# 外挿評価データ
 
-Place raw VTM series under `VTK/caseN/`. Generated pair files are written to `processed/pairs/`. Case numbers are local to this directory.
+生のVTM時系列データは`VTK/caseN/`へ配置します。生成したpairファイルは`processed/pairs/`へ保存されます。case番号はこのディレクトリ内だけで有効なローカル番号です。

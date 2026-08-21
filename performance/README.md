@@ -1,8 +1,8 @@
-# Performance evaluation
+# Performance評価
 
-This directory is reserved for final evaluation data that must never be used for training or validation. Case numbers are local to each data root: `data/interpolation/VTK/case0` and the training `data/VTK/case0` are unrelated. The Reynolds-number metadata in each generated pair file is the physical case identifier used for evaluation.
+このディレクトリは、学習およびvalidationには使用しない最終性能評価用データのための領域です。case番号は各データルート内だけで有効なローカル番号です。例えば、`data/interpolation/VTK/case0`と学習用の`data/VTK/case0`は別のケースとして扱います。評価時の物理的なケース識別には、生成した各pairファイル内のReynolds数metadataを使用します。
 
-## Directory boundaries
+## ディレクトリ境界
 
 ```text
 performance/
@@ -16,29 +16,34 @@ performance/
     └── extrapolation/{one_step,rollout}
 ```
 
-Never point the training `configs/dataset.yaml` at `performance/data`. Performance evaluation code must only discover files below the `data_dir` in its own config. Do not use a repository-wide recursive search for pair files.
+学習用の`configs/dataset.yaml`を`performance/data`へ向けてはいけません。Performance評価コードは専用configの`data.directory`以下だけを探索します。リポジトリ全体を再帰検索してpairファイルを収集してはいけません。
 
-## Generate pair files
+## Pairファイルの生成
 
-The existing `src/make_pairs.py` is reused; no preprocessing implementation is duplicated. Put VTM data in the matching `VTK/caseN` directory, verify the local `reynolds_by_case` mapping, then run:
+既存の`src/make_pairs.py`を再利用し、前処理を複製しません。VTMデータを対応する`VTK/caseN`へ配置し、専用configの`reynolds_by_case`が実データと一致することを確認してから実行します。
+
+> **重要:** Performance用configは必ず`--config`で指定してください。
+> `python src/make_pairs.py`だけを実行すると、デフォルトのtrain/validation用
+> `configs/make_pairs.yaml`が使用され、`data/processed/pairs`へ出力されます。
+> Performance用pairは自動的には生成されません。
 
 ```bash
 python src/make_pairs.py --config performance/configs/make_pairs_interpolation.yaml
 python src/make_pairs.py --config performance/configs/make_pairs_extrapolation.yaml
 ```
 
-Each output `.pt` stores both `meta.case` and `Re`. Validate the generated directory and confirm its manifest contains the intended Re values:
+生成された各`.pt`には`meta.case`と`Re`が保存されます。生成後は対象ディレクトリを検証し、`manifest.json`のcase、Re、pair数、shapeが意図どおりか確認します。
 
 ```bash
 python src/validate_pairs.py performance/data/interpolation/processed/pairs
 python src/validate_pairs.py performance/data/extrapolation/processed/pairs
 ```
 
-## One-step evaluation
+## One-step評価
 
-`test_dataloader.py` resolves only the configured performance directory, checks every pair file's internal Reynolds-number metadata against `test_re`, and applies the training Dataset configuration and train-only normalization statistics.
+`test_dataloader.py`は、configで指定されたperformanceディレクトリだけを探索し、各pairファイル内部のReynolds数metadataと`test_re`を照合します。チャネル構成とnormalizationには、学習時のDataset設定およびtrainデータだけから算出した統計量を使用します。
 
-`test.py` then loads the fixed checkpoint, runs one-step inference with `model.eval()` and inference mode, and writes metrics under `results/<evaluation.type>/one_step/`.
+`test.py`は確定済みcheckpointを読み込み、`model.eval()`とinference modeでone-step推論を実行し、`results/<evaluation.type>/one_step/`へ評価結果を保存します。
 
 ```bash
 python performance/src/test_dataloader.py \
@@ -48,20 +53,22 @@ python performance/src/test.py \
   --config performance/configs/test.yaml
 ```
 
-The saved JSON and CSV contain overall and per-Re MSE/Relative L2, split by `u`, `v`, and `p`. Both standardized and physical scales, and both the full grid and mask-valid region, are reported. Prediction tensors are not saved.
+JSONとCSVには、全体およびRe別のMSEとRelative L2を保存します。`u`、`v`、`p`別、標準化空間と物理空間、全格子とmask有効領域をそれぞれ記録します。予測Tensor自体は保存しません。
 
-For extrapolation only, `extrapolation_relative_l2.png` is also generated. Its horizontal axis is the distance from the training boundary (`Re - 250`), and its vertical axis is the physical-scale Relative L2 error on the mask-valid region in percent. Overall, `u`, `v`, and `p` are plotted separately. Interpolation evaluation does not generate this plot.
+内挿評価では`interpolation_relative_l2.png`を生成します。横軸はReynolds数、縦軸はmask有効領域における物理スケールのRelative L2誤差（%）です。
 
-Switch interpolation/extrapolation through `evaluation.type`, `data.directory`, and `test_re` in `test_dataloader.yaml`. Common loader settings come from `configs/dataloader.yaml`, and test shuffle is always disabled.
+外挿評価では`extrapolation_relative_l2.png`を生成します。横軸は学習範囲上限からの距離`Re - 250`、縦軸は同じRelative L2誤差（%）です。どちらもOverall、`u`、`v`、`p`を別々の系列として表示します。
 
-## Test dataset checklist
+内挿と外挿は、`test_dataloader.yaml`の`evaluation.type`、`data.directory`、`test_re`で切り替えます。共通のloader設定は`configs/dataloader.yaml`から取得し、test時のshuffleは常に無効です。
 
-Changing only the input/output directory is not sufficient. Before generating or evaluating a test dataset, check all of the following:
+## Test dataset作成・評価時のチェックリスト
 
-- Place raw VTM files under the intended `interpolation/VTK` or `extrapolation/VTK` root. Never combine them with the training `data/VTK` tree.
-- Update `reynolds_by_case` in the corresponding make-pairs config. A case number is only a directory-local label; its configured Reynolds number is the physical identity of the case.
-- Keep `test_re` in `test_dataloader.yaml` consistent with `reynolds_by_case`.
-- Unless the evaluation intentionally studies preprocessing changes, keep `step_to_time`, time range, `dt_pair`, grid bounds/resolution, field names, and interpolation method identical to the training-data generation conditions.
-- Reuse the training Dataset configuration and train-only normalization statistics. Never calculate mean/std from interpolation or extrapolation test data. In particular, keep the trained Re scaling unchanged even when an extrapolation Re produces a scaled value greater than one.
-- After pair generation, run `src/validate_pairs.py` on the output directory and inspect `manifest.json` for the expected case, Re, pair count, and tensor shape.
-- Do not use final test results to select checkpoints or tune model/training hyperparameters. Data used for those decisions becomes validation data and a separate untouched final test set is then required.
+入出力ディレクトリを変更するだけでは不十分です。test datasetの生成または評価前に、以下を確認してください。
+
+- 生のVTMファイルを`interpolation/VTK`または`extrapolation/VTK`へ配置し、学習用`data/VTK`と混在させない。
+- 対応するmake-pairs configの`reynolds_by_case`を実データに合わせる。case番号はディレクトリ内だけのラベルであり、物理的な識別には設定されたReynolds数を使う。
+- `test_dataloader.yaml`の`test_re`を`reynolds_by_case`と一致させる。
+- 前処理条件の違い自体を評価する場合を除き、`step_to_time`、時間範囲、`dt_pair`、grid bounds・解像度、field名、補間方法を学習データ生成時と揃える。
+- 学習時のDataset設定とtrain統計量を再利用し、内挿・外挿testデータ自身からmean/stdを算出しない。外挿Reのscale後の値が1を超えても、学習時のRe scaleを変更しない。
+- pair生成後に`src/validate_pairs.py`を実行し、`manifest.json`のcase、Re、pair数、Tensor shapeを確認する。
+- 最終test結果をcheckpoint選択やハイパーパラメータ調整に使用しない。使用した場合、そのデータはvalidation扱いとなり、別の未使用test setが必要になる。

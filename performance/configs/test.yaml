@@ -8,4 +8,5 @@ output:
   root_directory: ../results
   metrics_json: metrics.json
   metrics_csv: metrics.csv
+  interpolation_plot: interpolation_relative_l2.png
   extrapolation_plot: extrapolation_relative_l2.png
