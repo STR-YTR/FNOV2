@@ -1,0 +1,18 @@
+# interpolation / extrapolationはこのconfigだけで切り替える。
+evaluation:
+  type: interpolation
+
+data:
+  directory: ../data/interpolation/processed/pairs
+  file_pattern: "pairs_case*_Re*.pt"
+
+test_re:
+  - 35
+  - 85
+  - 135
+  - 185
+  - 235
+
+# channel構成とtrain統計量、および共通loader設定の正本。
+dataset_config: ../../configs/dataset.yaml
+dataloader_config: ../../configs/dataloader.yaml

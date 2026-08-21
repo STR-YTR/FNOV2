@@ -7,3 +7,14 @@ src/__pycache__/*.pyc
 outputs/
 checkpoints/
 logs/
+
+# Performance evaluation raw/generated data and results
+performance/data/*/VTK/**
+performance/data/*/processed/**
+performance/results/**/*.json
+performance/results/**/*.csv
+performance/results/**/*.pt
+performance/results/**/*.png
+performance/results/**/*.npy
+performance/results/**/*.vtk
+performance/results/**/*.vti

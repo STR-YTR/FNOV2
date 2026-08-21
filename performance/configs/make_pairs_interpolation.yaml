@@ -1,0 +1,33 @@
+data:
+  input_dir: ../data/interpolation/VTK
+  output_dir: ../data/interpolation/processed/pairs
+  recursive: true
+  file_pattern: 'case(?P<case>\d+)_(?P<step>\d+)\.vtm$'
+  output_filename: pairs_case{case}_Re{Re:g}.pt
+  # case numbers are local to performance/data/interpolation.
+  reynolds_by_case:
+    "0": 35
+    "1": 85
+    "2": 135
+    "3": 185
+    "4": 235
+
+fields:
+  velocity: U
+  pressure: p
+
+time:
+  step_to_time: 0.01
+  min: 340.0
+  max: 350.0
+  dt_pair: 0.1
+  tolerance: 0.000001
+
+grid:
+  bounds: auto
+  nx: 256
+  ny: 64
+  z: null
+
+interpolation:
+  method: linear

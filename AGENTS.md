@@ -2055,6 +2055,327 @@ Checkpoint
 実験条件は可能な限りYAMLから変更可能とし、
 実験ごとにPythonコードを書き換える設計を避ける。
 
+## Performance Test DataLoader
+
+performance評価では、train / validation用のDataLoaderとは処理を分離し、
+評価専用のtest loaderを使用する。
+
+ただし、Dataset処理やDataLoader共通設定を重複実装しない。
+
+基本構成は以下とする。
+
+```text
+dataset.py
+   ↓
+共通のDataset処理
+   ↓
+test_dataloader.py
+   ↓
+test_loader
+   ↓
+performance/src/test.py
+```
+
+### 責務
+
+`test_dataloader.py` は主に以下を担当する。
+
+```text
+performance用データディレクトリの指定
+評価対象Reの選択
+batch化
+test_loader生成
+```
+
+以下はtest_dataloader側で再実装しない。
+
+```text
+pair .ptの生成処理
+Datasetのchannel選択
+Normalization / Standardization
+train統計量の算出
+FNOモデル処理
+評価metric計算
+```
+
+
+## Train / Validationとの分離
+
+train / validation用データとperformance評価用データは、
+ディレクトリレベルで明確に分離する。
+
+例：
+
+```text
+FNOV2/
+├── data/
+│   # train / validation専用
+│
+└── performance/
+    └── data/
+        ├── interpolation/
+        └── extrapolation/
+```
+
+train / validation側のDataLoaderは、
+`data/` 配下のみを探索する。
+
+performance用test loaderは、
+`performance/data/` 配下のみを探索する。
+
+performanceデータをtrainまたはvalidationへ混入させてはならない。
+
+
+## Interpolation / Extrapolation
+
+interpolation用とextrapolation用に
+別々のDataLoader実装を作成しない。
+
+共通の`test_dataloader.py`を使用し、
+評価対象ディレクトリおよびReynolds numberを
+performance用configから切り替える。
+
+概念的には、
+
+```text
+test_dataloader.py
+       │
+       ├── interpolation data
+       │
+       └── extrapolation data
+```
+
+とする。
+
+コードは共通化し、
+データ・設定・評価結果のみを分離する。
+
+
+## test.yaml
+
+performance評価固有の条件は、
+performance側のconfigで管理する。
+
+例：
+
+```yaml
+evaluation:
+  type: interpolation
+
+data:
+  directory: ../data/interpolation
+
+test_re:
+  - 35
+  - 85
+  - 135
+  - 185
+  - 235
+```
+
+外挿評価では例えば、
+
+```yaml
+evaluation:
+  type: extrapolation
+
+data:
+  directory: ../data/extrapolation
+
+test_re:
+  - 260
+  - 275
+  - 300
+```
+
+のように変更可能とする。
+
+Pythonコード内へ評価対象Reをハードコードしない。
+
+
+## DataLoader共通設定
+
+test loaderのbatch生成に関する共通設定は、
+既存の`configs/dataloader.yaml`を参照する。
+
+例えば以下の設定は、
+既存DataLoader設定を正本とする。
+
+```text
+batch_size
+num_workers
+pin_memory
+drop_last
+persistent_workers
+seed
+```
+
+test用として同じ値を別のYAMLへ重複記載しない。
+
+概念的には、
+
+```text
+configs/dataloader.yaml
+        ↓
+共通loader設定
+        ↓
+test_dataloader.py
+        ↑
+performance test config
+        ↓
+data directory / test Re
+```
+
+という依存関係とする。
+
+ただしtestでは原則として、
+
+```text
+shuffle = false
+```
+
+とする。
+
+
+## Datasetの再利用
+
+test用に新しいDatasetクラスを複製しない。
+
+既存の`dataset.py`を使用して、
+train / validation時と同じchannel処理、
+Normalization / Standardizationを適用する。
+
+特にtestデータに対して、
+test自身のmean / stdを新たに算出してはならない。
+
+u / v / pのStandardizationには、
+学習時に確定したtrain統計量を使用する。
+
+
+## Extrapolation時のScaling
+
+外挿評価でも、
+学習時に使用したNormalization / Scaling条件を変更しない。
+
+例えばReynolds numberについて、
+
+```text
+Re_scaled = Re / 250
+```
+
+を学習時に使用した場合、
+外挿Reでも同じ式を使用する。
+
+例：
+
+```text
+Re = 250 -> 1.00
+Re = 260 -> 1.04
+Re = 275 -> 1.10
+Re = 300 -> 1.20
+```
+
+test条件に合わせてscale値を変更してはならない。
+
+同様に、
+
+```text
+x / y scaling
+u / v / p mean
+u / v / p std
+```
+
+についても学習時の変換を固定して使用する。
+
+
+## Case IDの扱い
+
+performance用データでは、
+train / validation用データとcase番号が重複する可能性がある。
+
+例：
+
+```text
+train:
+case0_Re10
+
+performance:
+case0_Re85
+```
+
+このため、`case_idx`をグローバルに一意な識別子として扱わない。
+
+test loaderでは、
+
+```text
+検索対象directory
+Re metadata
+```
+
+を利用して評価対象を識別する。
+
+case番号だけを使って
+train / validationデータとperformanceデータを横断検索しない。
+
+
+## Test Loader Sanity Check
+
+test loader実装後は、
+推論処理へ進む前に最低限以下を確認する。
+
+1. 指定したperformance directoryのみを探索している
+2. 指定したReのみが読み込まれている
+3. train / validation用データが混入していない
+4. test用Re一覧が想定通りである
+5. test sample数が想定通りである
+6. batch shapeが正しい
+7. input channel数がDataset設定と一致する
+8. output channel数がDataset設定と一致する
+9. NaN / Infが存在しない
+10. testデータにtrain統計量が使用されている
+11. test自身からNormalization統計量を算出していない
+12. interpolation / extrapolationの切替がconfigのみで可能である
+
+表示例：
+
+```text
+=== Test DataLoader Summary ===
+evaluation     : interpolation
+data directory : performance/data/interpolation
+
+test Re:
+[35, 85, 135, 185, 235]
+
+test files     : 5
+test samples   : 500
+
+batch x shape  : (8, 7, 64, 256)
+batch y shape  : (8, 3, 64, 256)
+
+shuffle        : false
+finite check   : passed
+```
+
+外挿評価でも同一のtest loaderを使用し、
+config変更のみで切り替えられることを確認する。
+
+
+## Implementation Principle
+
+performance評価では、
+
+```text
+コードは可能な限り共通化
+データは明確に分離
+設定はYAMLで切替
+結果は評価条件ごとに分離
+```
+
+を基本原則とする。
+
+特に、
+interpolation / extrapolationの違いだけを理由として
+ほぼ同一のDataset・DataLoader・testコードを複製しないこと。
 ### 実装上の原則
 
 DataLoader実装時は、既存の`dataset.py`および

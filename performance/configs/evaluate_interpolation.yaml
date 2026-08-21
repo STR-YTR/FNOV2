@@ -1,0 +1,14 @@
+evaluation:
+  kind: interpolation
+  checkpoint: ../../outputs/training/baseline/best.pt
+  training_dataset_config: ../../configs/dataset.yaml
+  data_dir: ../data/interpolation/processed/pairs
+  file_pattern: "pairs_case*_Re*.pt"
+  expected_re: [35, 85, 135, 185, 235]
+
+output:
+  one_step_dir: ../results/interpolation/one_step
+  rollout_dir: ../results/interpolation/rollout
+
+rollout:
+  steps: 100
