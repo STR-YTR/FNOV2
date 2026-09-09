@@ -18,4 +18,5 @@ performance/results/**/*.png
 performance/results/**/*.npy
 performance/results/**/*.vtk
 performance/results/**/*.vti
+performance/results/**/*.pvd
 __pycache__/

@@ -61,6 +61,22 @@ JSONとCSVには、全体およびRe別のMSEとRelative L2を保存します。
 
 内挿と外挿は、`test_dataloader.yaml`の`evaluation.type`、`data.directory`、`test_re`で切り替えます。共通のloader設定は`configs/dataloader.yaml`から取得し、test時のshuffleは常に無効です。
 
+
+## Autoregressive rollout評価
+
+`rollout.py`は`t=340.0 s`のGTを初期場として使用し、teacher forcingを行わず、予測した`u/v/p`だけを次入力へ戻して`t=350.0 s`まで100 step進めます。mask、座標、Reは固定し、学習時のnormalizationをそのまま使用します。
+
+```bash
+python performance/src/rollout.py --config performance/configs/rollout.yaml
+```
+
+正式結果は`results/<evaluation.type>/rollout/`へ保存します。各Reの`rollout_ReXX.pt`には100 stepすべてのprediction、ground truth、time、mask、metrics、metadataを保存します。画像は等間隔5点程度と最大Relative L2時刻だけを`plots/ReXX/`へ保存します。
+
+ParaView用にはReごとに`vti/ReXX/prediction_ReXX.pvd`と100 step分のVTIを出力します。ParaViewではPVDファイルを開くと、各`u/v/p`のPrediction、Ground Truth、Absolute Errorを同じtime stepで切り替えて比較できます。また、予測だけをまとめた`rollout_prediction_ReXX.pt`もReごとに保存します。
+
+W&BはReごとに別Runを作成し、各stepの`time`、`elapsed_time`、MSE、Relative L2をoverallおよび`u/v/p`別に記録します。まず`rollout.yaml`の`reynolds: [35]`でsanity checkし、成功後に内挿全Re、最後にtest loaderを外挿へ切り替えて外挿全Reへ展開します。W&Bを使用しない場合は`wandb.enabled: false`にします。
+
+
 ## Test dataset作成・評価時のチェックリスト
 
 入出力ディレクトリを変更するだけでは不十分です。test datasetの生成または評価前に、以下を確認してください。
