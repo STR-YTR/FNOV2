@@ -21,7 +21,7 @@ Notebookは設定確認・事前チェック・実行・可視化に使用し、
 ```text
 performance/results/exNNN_name/
 ├── experiment.md
-├── config_snapshot.txt
+├── config_snapshot.md
 ├── interpolation/
 │   ├── one_step/
 │   └── rollout/
@@ -31,7 +31,7 @@ performance/results/exNNN_name/
 ```
 
 - `experiment.md`: 学習設定、評価条件、結果、所見
-- `config_snapshot.txt`: 実験時点のYAML全文。記録専用で実行には使用しない
+- `config_snapshot.md`: 実験時点のYAML全文。記録専用で実行には使用しない
 - `interpolation/`、`extrapolation/`: metrics、PNG、PT、VTI、PVDなどの正式結果
 
 学習checkpointと履歴は容量が大きいため、`outputs/training/<実験名>/`に保存し、experiment.mdから参照します。
@@ -48,14 +48,14 @@ performance/results/exNNN_name/
 6. `performance/configs/test.yaml`と`rollout.yaml`のcheckpointを `outputs/training/ex002_lr1e4/best.pt` に変更する。
 7. 両configの`output.root_directory`を `../results/ex002_lr1e4` に変更する。
 8. 評価Notebookの `EXPERIMENT_ID`を `ex002_lr1e4` に変更してone-step、rolloutを実行する。
-9. 評価コードが自動作成した`performance/results/ex002_lr1e4/`へexperiment.mdとconfig_snapshot.txtを保存する。
+9. 評価コードが自動作成した`performance/results/ex002_lr1e4/`へexperiment.mdとconfig_snapshot.mdを保存する。
 10. この実験一覧へ結果を追加する。
 
 ## 運用ルール
 
 - 実験IDは `exNNN_説明` とする。
 - YAMLは現在実行する設定だけを保持する。
-- 過去の設定は各実験の`config_snapshot.txt`へ保存する。
+- 過去の設定は各実験の`config_snapshot.md`へ保存する。
 - 学習出力とperformance結果は実験ごとに別ディレクトリへ保存する。
 - 過去実験のcheckpoint、metrics、PNG、PT、VTIを上書きしない。
 - Notebookの`EXPERIMENT_ID`、YAMLの出力先、checkpointが同じ実験を指すことを事前チェックで確認する。

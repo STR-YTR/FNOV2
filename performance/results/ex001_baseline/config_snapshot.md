@@ -1,9 +1,24 @@
-ex001_baseline config snapshot
-This file is an archive. Canonical executable settings are the YAML files listed below.
+# ex001_baseline 設定スナップショット
 
-================================================================================
-FILE: configs/make_pairs.yaml
-================================================================================
+このファイルは実験実行時点の設定を保存した記録です。実行用設定ではありません。実際にコードが参照する設定の正本は、各セクションに示したYAMLです。
+
+## 収録設定
+
+- `configs/make_pairs.yaml`
+- `configs/dataset.yaml`
+- `configs/normalization_stats.yaml`
+- `configs/dataloader.yaml`
+- `configs/model.yaml`
+- `configs/train.yaml`
+- `performance/configs/make_pairs_interpolation.yaml`
+- `performance/configs/make_pairs_extrapolation.yaml`
+- `performance/configs/test_dataloader.yaml`
+- `performance/configs/test.yaml`
+- `performance/configs/rollout.yaml`
+
+## `configs/make_pairs.yaml`
+
+```yaml
 data:
   input_dir: ../data/VTK
   output_dir: ../data/processed/pairs
@@ -58,10 +73,11 @@ grid:
   z: null       # nullの場合はVTMのz方向中央
 interpolation:
   method: linear
+```
 
-================================================================================
-FILE: configs/dataset.yaml
-================================================================================
+## `configs/dataset.yaml`
+
+```yaml
 dataset:
   data_dir: ../data/processed/pairs
   file_pattern: "pairs_case*_Re*.pt"
@@ -106,10 +122,11 @@ normalization:
 debug:
   enabled: true
   sample_count: 5
+```
 
-================================================================================
-FILE: configs/normalization_stats.yaml
-================================================================================
+## `configs/normalization_stats.yaml`
+
+```yaml
 # configs/dataloader.yamlのtrain_reだけから算出した再現用metadata。
 normalization_statistics:
   statistics_source: train
@@ -148,10 +165,11 @@ normalization_statistics:
     p:
       mean: 0.00004195688495005484
       std: 0.00017544342254628847
+```
 
-================================================================================
-FILE: configs/dataloader.yaml
-================================================================================
+## `configs/dataloader.yaml`
+
+```yaml
 # Datasetの場所・チャネル構成はdataset.yamlを正本とする。
 dataset_config: dataset.yaml
 
@@ -194,10 +212,11 @@ loader:
   drop_last: false
   persistent_workers: false
   seed: 42
+```
 
-================================================================================
-FILE: configs/model.yaml
-================================================================================
+## `configs/model.yaml`
+
+```yaml
 model:
   name: FNO
   implementation: neuralop
@@ -243,10 +262,11 @@ visualization:
   # 有効時は外部ライブラリを使わず、完全なPyTorchモデル構造をテキスト保存する。
   enabled: false
   output_path: ../outputs/model/fno_architecture.txt
+```
 
-================================================================================
-FILE: configs/train.yaml
-================================================================================
+## `configs/train.yaml`
+
+```yaml
 training:
   model_config: model.yaml
   epochs: 100
@@ -306,10 +326,11 @@ wandb:
 
   # smoke testは通常クラウドへ送信しない。
   log_smoke_test: false
+```
 
-================================================================================
-FILE: performance/configs/make_pairs_interpolation.yaml
-================================================================================
+## `performance/configs/make_pairs_interpolation.yaml`
+
+```yaml
 data:
   input_dir: ../data/interpolation/VTK
   output_dir: ../data/interpolation/processed/pairs
@@ -343,10 +364,11 @@ grid:
 
 interpolation:
   method: linear
+```
 
-================================================================================
-FILE: performance/configs/make_pairs_extrapolation.yaml
-================================================================================
+## `performance/configs/make_pairs_extrapolation.yaml`
+
+```yaml
 data:
   input_dir: ../data/extrapolation/VTK
   output_dir: ../data/extrapolation/processed/pairs
@@ -380,10 +402,11 @@ grid:
 
 interpolation:
   method: linear
+```
 
-================================================================================
-FILE: performance/configs/test_dataloader.yaml
-================================================================================
+## `performance/configs/test_dataloader.yaml`
+
+```yaml
 # interpolation / extrapolationはこのconfigだけで切り替える。
 evaluation:
   type: extrapolation
@@ -402,10 +425,11 @@ test_re:
 # channel構成とtrain統計量、および共通loader設定の正本。
 dataset_config: ../../configs/dataset.yaml
 dataloader_config: ../../configs/dataloader.yaml
+```
 
-================================================================================
-FILE: performance/configs/test.yaml
-================================================================================
+## `performance/configs/test.yaml`
+
+```yaml
 test_dataloader_config: test_dataloader.yaml
 model_config: ../../configs/model.yaml
 checkpoint: ../../outputs/training/baseline/best.pt
@@ -418,10 +442,11 @@ output:
   metrics_csv: metrics.csv
   interpolation_plot: interpolation_relative_l2.png
   extrapolation_plot: extrapolation_relative_l2.png
+```
 
-================================================================================
-FILE: performance/configs/rollout.yaml
-================================================================================
+## `performance/configs/rollout.yaml`
+
+```yaml
 test_dataloader_config: test_dataloader.yaml
 model_config: ../../configs/model.yaml
 checkpoint: ../../outputs/training/baseline/best.pt
@@ -445,3 +470,4 @@ wandb:
   name_prefix: rollout
   group: performance-rollout
   mode: online
+```

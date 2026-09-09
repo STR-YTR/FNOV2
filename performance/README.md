@@ -14,7 +14,7 @@ performance/
 └── results/
     └── <experiment_id>/
         ├── experiment.md
-        ├── config_snapshot.txt
+        ├── config_snapshot.md
         ├── interpolation/{one_step,rollout}
         └── extrapolation/{one_step,rollout}
 ```
@@ -28,7 +28,7 @@ performance/
 - Notebookの`EXPERIMENT_ID`も同じ値にする。
 - Notebookの事前チェックがすべて成功してから実行する。
 
-結果ディレクトリは評価コードが自動作成するため、事前の`mkdir`は不要です。実験終了後、同じディレクトリへ`experiment.md`と`config_snapshot.txt`を保存します。既存実験のディレクトリを次の実験で再利用してはいけません。
+結果ディレクトリは評価コードが自動作成するため、事前の`mkdir`は不要です。実験終了後、同じディレクトリへ`experiment.md`と`config_snapshot.md`を保存します。既存実験のディレクトリを次の実験で再利用してはいけません。
 
 現在のbaseline結果は`results/ex001_baseline/`に保存されています。
 

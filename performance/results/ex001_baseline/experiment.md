@@ -382,4 +382,4 @@ Performanceデータはtrain/validationには使用しません。現在のtest 
 - `test.yaml`と`rollout.yaml`のcheckpoint
 - 両YAMLの`output.root_directory`
 
-実験終了後に、使用YAMLの全文を`config_snapshot.txt`へ保存し、設定と結果の要約を`experiment.md`へ記録します。
+実験終了後に、使用YAMLの全文を`config_snapshot.md`へ保存し、設定と結果の要約を`experiment.md`へ記録します。

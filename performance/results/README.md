@@ -6,7 +6,7 @@
 performance/results/
 └── exNNN_name/
     ├── experiment.md
-    ├── config_snapshot.txt
+    ├── config_snapshot.md
     ├── interpolation/
     │   ├── one_step/
     │   └── rollout/
@@ -18,7 +18,7 @@ performance/results/
 ## 1実験に含めるもの
 
 - `experiment.md`: データ、normalization、モデル、学習条件、評価結果、所見
-- `config_snapshot.txt`: 実行時点のYAML全文をまとめた記録。実行には使用しない
+- `config_snapshot.md`: 実行時点のYAML全文をまとめた記録。実行には使用しない
 - `one_step/`: metrics CSV/JSONとRe別誤差PNG
 - `rollout/`: step別metrics、全時刻PT、代表画像、ParaView用VTI/PVD
 
