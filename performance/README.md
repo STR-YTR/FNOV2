@@ -6,15 +6,31 @@
 
 ```text
 performance/
-├── configs/
+├── configs/                      # 現在実行する評価設定
 ├── data/
 │   ├── interpolation/{VTK,processed/pairs}
 │   └── extrapolation/{VTK,processed/pairs}
 ├── src/
 └── results/
-    ├── interpolation/{one_step,rollout}
-    └── extrapolation/{one_step,rollout}
+    └── <experiment_id>/
+        ├── experiment.md
+        ├── config_snapshot.txt
+        ├── interpolation/{one_step,rollout}
+        └── extrapolation/{one_step,rollout}
 ```
+
+## 実験IDと保存先
+
+評価前に、使用する学習済みモデルと同じ実験IDを決めます。例: `ex002_lr1e4`。
+
+- `performance/configs/test.yaml`と`rollout.yaml`の`checkpoint`を、その実験の`best.pt`へ向ける。
+- 両configの`output.root_directory`を`../results/<experiment_id>`へ向ける。
+- Notebookの`EXPERIMENT_ID`も同じ値にする。
+- Notebookの事前チェックがすべて成功してから実行する。
+
+結果ディレクトリは評価コードが自動作成するため、事前の`mkdir`は不要です。実験終了後、同じディレクトリへ`experiment.md`と`config_snapshot.txt`を保存します。既存実験のディレクトリを次の実験で再利用してはいけません。
+
+現在のbaseline結果は`results/ex001_baseline/`に保存されています。
 
 学習用の`configs/dataset.yaml`を`performance/data`へ向けてはいけません。Performance評価コードは専用configの`data.directory`以下だけを探索します。リポジトリ全体を再帰検索してpairファイルを収集してはいけません。
 
@@ -43,7 +59,7 @@ python src/validate_pairs.py performance/data/extrapolation/processed/pairs
 
 `test_dataloader.py`は、configで指定されたperformanceディレクトリだけを探索し、各pairファイル内部のReynolds数metadataと`test_re`を照合します。チャネル構成とnormalizationには、学習時のDataset設定およびtrainデータだけから算出した統計量を使用します。
 
-`test.py`は確定済みcheckpointを読み込み、`model.eval()`とinference modeでone-step推論を実行し、`results/<evaluation.type>/one_step/`へ評価結果を保存します。
+`test.py`は確定済みcheckpointを読み込み、`model.eval()`とinference modeでone-step推論を実行し、`results/<experiment_id>/<evaluation.type>/one_step/`へ評価結果を保存します。
 
 ```bash
 python performance/src/test_dataloader.py \
@@ -70,7 +86,7 @@ JSONとCSVには、全体およびRe別のMSEとRelative L2を保存します。
 python performance/src/rollout.py --config performance/configs/rollout.yaml
 ```
 
-正式結果は`results/<evaluation.type>/rollout/`へ保存します。各Reの`rollout_ReXX.pt`には100 stepすべてのprediction、ground truth、time、mask、metrics、metadataを保存します。画像は等間隔5点程度と最大Relative L2時刻だけを`plots/ReXX/`へ保存します。
+正式結果は`results/<experiment_id>/<evaluation.type>/rollout/`へ保存します。各Reの`rollout_ReXX.pt`には100 stepすべてのprediction、ground truth、time、mask、metrics、metadataを保存します。画像は等間隔5点程度と最大Relative L2時刻だけを`plots/ReXX/`へ保存します。
 
 ParaView用にはReごとに`vti/ReXX/prediction_ReXX.pvd`と100 step分のVTIを出力します。ParaViewではPVDファイルを開くと、各`u/v/p`のPrediction、Ground Truth、Absolute Errorを同じtime stepで切り替えて比較できます。また、予測だけをまとめた`rollout_prediction_ReXX.pt`もReごとに保存します。
 

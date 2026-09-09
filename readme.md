@@ -41,13 +41,13 @@ OpenFOAMで生成した円柱周り流れ場を教師データとして用い、
 ## Directory Structure
 
 ```text
-configs/        Experiment configurations
-src/data/       Dataset generation and loading
-src/models/     FNO model definitions
-src/training/   Training pipeline
-src/inference/  Rollout and evaluation
-data/           Raw and processed datasets
-checkpoints/    Trained model weights
-results/        Figures, metrics, and VTI files
-logs/           Training logs
-docs/           Research and design notes
+configs/                学習・Dataset・Modelの実行用YAML
+src/                    pair生成、Dataset、Model、学習処理
+data/                   train / validation用のVTKとpair
+outputs/training/       学習済みcheckpointと学習履歴
+performance/configs/    現在実行するperformance評価用YAML
+performance/data/       学習に使用しない内挿・外挿評価データ
+performance/src/        one-step・rollout評価処理
+performance/results/    実験ID別の評価結果・実験記録
+experiment/             設定確認・実行・可視化Notebook
+docs/                   研究・設計資料
