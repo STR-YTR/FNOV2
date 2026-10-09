@@ -2,7 +2,7 @@ training:
   model_config: model.yaml
   epochs: 100
   seed: 42
-  device: auto
+  device: cuda
   deterministic: false
   gradient_clip_norm: null
   resume_checkpoint: null
@@ -22,7 +22,7 @@ loss:
   valid_region_only: false
 
 output:
-  directory: ../outputs/training/baseline
+  directory: ../outputs/training/002
   checkpoint_interval: 10
 
 wandb:

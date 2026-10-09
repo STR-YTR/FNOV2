@@ -5,7 +5,7 @@ Notebookは設定確認・事前チェック・実行・可視化に使用し、
 ## Notebook
 
 - [学習](training/training.ipynb)
-- [One-step評価](evaluation/one_step.ipynb)
+- [One-step評価](evaluation/one_step.ipynb): セクション7でReとサンプル番号を指定し、u/v/pの正解・予測・絶対誤差をmatplotlibで比較。全件評価は不要で、選択サンプルのみtest.yamlのdevice設定で推論。PNG保存は任意。
 - [Rollout評価](evaluation/rollout.ipynb)
 
 各Notebookの先頭にある `EXPERIMENT_ID` は、実行対象と保存先の確認に使用します。実行用設定の正本はルートのYAMLです。
