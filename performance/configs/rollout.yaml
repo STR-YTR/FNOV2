@@ -1,7 +1,7 @@
 test_dataloader_config: test_dataloader.yaml
 model_config: ../../configs/model.yaml
 ###モデル切り替え↓
-checkpoint: ../../outputs/training/ex003/best.pt
+checkpoint: ../../outputs/training/ex002/best.pt
 device: auto
 rollout:
   start_time: 340.0
@@ -11,7 +11,7 @@ rollout:
   reynolds: [35,85,135,185,235]  # sanity後に内挿全Re、外挿全Reへ広げる。(例reynolds: [35, 85, 135, 185, 235])
 output:
   #########################################
-  root_directory: ../results/ex003_baseline
+  root_directory: ../results/ex002_baseline
   #########################################
   metrics_csv: rollout_metrics.csv
   representative_count: 5
