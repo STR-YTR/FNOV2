@@ -7,9 +7,9 @@ rollout:
   end_time: 350.0
   steps: 100
   tolerance: 0.000001
-  reynolds: [260,270,280,290,300]  # sanity後に内挿全Re、外挿全Reへ広げる。(例reynolds: [35, 85, 135, 185, 235])
+  reynolds: [35,85,135,185,235]  # sanity後に内挿全Re、外挿全Reへ広げる。(例reynolds: [35, 85, 135, 185, 235])
 output:
-  root_directory: ../results/ex001_baseline
+  root_directory: ../results/ex002_baseline
   metrics_csv: rollout_metrics.csv
   representative_count: 5
   save_prediction_only_pt: true
