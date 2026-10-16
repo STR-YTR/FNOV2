@@ -1,6 +1,6 @@
 training:
   model_config: model.yaml
-  epochs: 100
+  epochs: 200
   seed: 42
   device: cuda
   deterministic: false
@@ -22,7 +22,7 @@ loss:
   valid_region_only: false
 
 output:
-  directory: ../outputs/training/ex002
+  directory: ../outputs/training/ex003
   checkpoint_interval: 10
 
 wandb:

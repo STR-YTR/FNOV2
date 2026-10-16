@@ -1,11 +1,12 @@
 test_dataloader_config: test_dataloader.yaml
 model_config: ../../configs/model.yaml
-checkpoint: ../../outputs/training/baseline/best.pt
+###モデルの切り替え↓
+checkpoint: ../../outputs/training/ex003/best.pt
 device: auto
 
 # evaluation.typeから結果の interpolation/extrapolation を導出する。
 output:
-  root_directory: ../results/ex002_baseline
+  root_directory: ../results/ex003_baseline
   metrics_json: metrics.json
   metrics_csv: metrics.csv
   interpolation_plot: interpolation_relative_l2.png

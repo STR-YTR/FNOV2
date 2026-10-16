@@ -7,7 +7,7 @@ model:
   dataloader_config: dataloader.yaml
 
   n_modes: [12, 12]
-  hidden_channels: 32
+  hidden_channels: 64
   lifting_channels: 64
   projection_channels: 64
   n_layers: 4
@@ -41,5 +41,5 @@ debug:
 
 visualization:
   # 有効時は外部ライブラリを使わず、完全なPyTorchモデル構造をテキスト保存する。
-  enabled: false
+  enabled: true
   output_path: ../outputs/model/fno_architecture.txt
