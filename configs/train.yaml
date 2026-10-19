@@ -22,7 +22,9 @@ loss:
   valid_region_only: false
 
 output:
-  directory: ../outputs/training/ex003
+  #####################################
+  directory: ../outputs/training/ex004
+  #####################################
   checkpoint_interval: 10
 
 wandb:
