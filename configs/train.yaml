@@ -23,7 +23,7 @@ loss:
 
 output:
   #####################################
-  directory: ../outputs/training/ex005
+  directory: ../outputs/training/ex006
   #####################################
   checkpoint_interval: 10
 
