@@ -156,7 +156,7 @@ def run_epoch(model, loader, device, valid_region_only, optimizer=None,
                     wandb_run.log({
                         "train/batch_loss": float(loss.detach()),
                         "train/global_step": global_step,
-                    }, step=global_step)
+                    }, step=global_step, commit=False)
             total_loss += float(loss.detach()) * len(x)
             total_samples += len(x)
             total_squared_error += float(squared_error)
@@ -167,6 +167,24 @@ def run_epoch(model, loader, device, valid_region_only, optimizer=None,
         raise ValueError("Relative L2 is undefined because target energy is zero")
     relative_l2 = (total_squared_error / total_target_energy) ** 0.5
     return total_loss / total_samples, relative_l2, global_step
+
+
+def gpu_memory_metrics(device: torch.device) -> dict[str, float]:
+    """This process's PyTorch allocator; peaks since the last reset, in GiB/% ."""
+    if device.type != "cuda":
+        return {}
+    total = torch.cuda.get_device_properties(device).total_memory
+    values = {
+        "allocated": torch.cuda.memory_allocated(device),
+        "reserved": torch.cuda.memory_reserved(device),
+        "peak_allocated": torch.cuda.max_memory_allocated(device),
+        "peak_reserved": torch.cuda.max_memory_reserved(device),
+    }
+    metrics = {f"gpu_memory/{name}_gib": value / 2**30
+               for name, value in values.items()}
+    metrics.update({f"gpu_memory/{name}_percent": 100 * value / total
+                    for name, value in values.items()})
+    return metrics
 
 
 def git_commit(project_root: Path) -> str | None:
@@ -235,6 +253,8 @@ def initialize_wandb(setting: dict[str, Any], config_paths: list[Path],
     run.define_metric("train/relative_l2", step_metric="epoch")
     run.define_metric("val/relative_l2", step_metric="epoch")
     run.define_metric("learning_rate", step_metric="epoch")
+    run.define_metric("gpu_memory/*", step_metric="epoch", summary="max")
+    run.define_metric("train/epoch_seconds", step_metric="epoch", summary="mean")
     return run
 
 
@@ -309,6 +329,23 @@ def train(config_path: str | Path, smoke_test: bool = False) -> None:
     if wandb_run is not None and bool(watch.get("enabled", False)):
         wandb_run.watch(model, log=watch.get("log", "all"),
                         log_freq=int(watch.get("log_freq", 100)))
+    parameter_metrics = {
+        "model/total_parameters": sum(p.numel() for p in model.parameters()),
+        "model/trainable_parameters": sum(p.numel() for p in model.parameters()
+                                           if p.requires_grad),
+        # FNO spectral weights are complex: also count independent real scalars.
+        "model/real_scalar_parameters": sum(p.numel() * (2 if p.is_complex() else 1)
+                                            for p in model.parameters()),
+        "model/parameter_bytes": sum(p.numel() * p.element_size()
+                                     for p in model.parameters()),
+    }
+    if wandb_run is not None:
+        wandb_run.summary.update(parameter_metrics)
+        if device.type == "cuda":
+            properties = torch.cuda.get_device_properties(device)
+            wandb_run.summary.update({"hardware/gpu_name": properties.name,
+                                      "hardware/gpu_total_gib": properties.total_memory / 2**30})
+    print(f"parameters      : {parameter_metrics['model/total_parameters']:,}")
     history: list[dict[str, Any]] = []
     max_batches = 1 if smoke_test else None
     log_interval = int(wandb_setting.get("log_interval_steps", 0))
@@ -329,11 +366,18 @@ def train(config_path: str | Path, smoke_test: bool = False) -> None:
         print("wandb           : disabled")
 
     for epoch in range(start_epoch, epochs + 1):
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+            torch.cuda.reset_peak_memory_stats(device)
         started = time.perf_counter()
         train_loss, train_relative_l2, global_step = run_epoch(
             model, train_loader, device, valid_region_only, optimizer, clip, max_batches,
             wandb_run, log_interval, global_step,
         )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        train_seconds = time.perf_counter() - started
+        memory_metrics = gpu_memory_metrics(device)
         val_loss, val_relative_l2, _ = run_epoch(
             model, val_loader, device, valid_region_only, max_batches=max_batches,
         )
@@ -348,6 +392,8 @@ def train(config_path: str | Path, smoke_test: bool = False) -> None:
                "train_relative_l2": train_relative_l2,
                "val_relative_l2": val_relative_l2,
                "learning_rate": learning_rate, "elapsed_seconds": elapsed}
+        row["train_seconds"] = train_seconds
+        row.update(memory_metrics)
         history.append(row)
         print(f"epoch {epoch:04d} | train={train_loss:.6e} | val={val_loss:.6e} | "
               f"train_rel_l2={train_relative_l2:.6e} | "
@@ -361,6 +407,8 @@ def train(config_path: str | Path, smoke_test: bool = False) -> None:
                 "val/relative_l2": val_relative_l2,
                 "learning_rate": learning_rate,
                 "epoch_seconds": elapsed,
+                "train/epoch_seconds": train_seconds,
+                **memory_metrics,
             }, step=global_step)
         if not smoke_test:
             save_checkpoint(output_dir / "last.pt", model, optimizer, scheduler,

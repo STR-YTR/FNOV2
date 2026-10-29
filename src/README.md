@@ -335,3 +335,22 @@ raw_dataset = PairDataset.from_config(
     apply_normalization=False,
 )
 ```
+
+## 学習時の計算資源ログ
+
+W&Bが有効な場合、各epochの学習区間（validationを除く）について以下を記録します。
+`history.csv`にもメモリ指標と`train_seconds`を保存します。
+
+- `gpu_memory/allocated_gib`, `reserved_gib`: 学習区間終了時のPyTorch割当量とキャッシュを含む予約量。
+- `gpu_memory/peak_allocated_gib`, `peak_reserved_gib`: 各epochの学習区間のピーク。W&B summaryには最大値も保存。
+- 同名の`_percent`: GPU総容量に対する割合（GPU演算稼働率ではありません）。
+- `train/epoch_seconds`: データ転送・学習・バッチログを含む学習区間の経過時間。CUDAでは前後で同期。
+- summaryの`model/total_parameters`, `trainable_parameters`, `real_scalar_parameters`, `parameter_bytes`。
+  通常のパラメータ数では複素数を1要素、`real_scalar_parameters`では2実数として数えます。
+- summaryの`hardware/gpu_name`, `gpu_total_gib`。
+
+GPUメモリ値は現在のプロセスのPyTorch allocatorが対象で、CUDA contextや他プロセスの使用量を含みません。
+予約量には以前のepoch/validationから保持されたキャッシュも含まれます。
+CPU実行ではGPU指標を記録しません。W&B無効時も通常の学習とCSV保存を継続します。
+比較には同じGPU、batch size、格子解像度、精度設定を使用し、初回epochの初期化時間を考慮してください。
+既存runに過去のメモリ値を追加することはできません。
