@@ -1,11 +1,11 @@
 training:
   model_config: model.yaml
-  epochs: 250
+  epochs: 300
   seed: 42
   device: cuda
   deterministic: false
   gradient_clip_norm: null
-  resume_checkpoint: null
+  resume_checkpoint: ../outputs/training/ex008/last.pt
 
 optimizer:
   type: adam
@@ -23,7 +23,7 @@ loss:
 
 output:
   #####################################
-  directory: ../outputs/training/ex007
+  directory: ../outputs/training/ex008
   #####################################
   checkpoint_interval: 10
 
@@ -46,7 +46,7 @@ wandb:
   log_interval_steps: 10
 
   # 同じW&B runを再開する場合にrun_idを設定する。
-  run_id: null
+  run_id: ghaaa2dq
   resume: allow
 
   watch:
