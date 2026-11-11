@@ -32,7 +32,7 @@ split:
     - 200
 
 loader:
-  batch_size: 4
+  batch_size: 8
   train_shuffle: true
   val_shuffle: false
   num_workers: 0

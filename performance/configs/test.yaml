@@ -1,12 +1,12 @@
 test_dataloader_config: test_dataloader.yaml
-model_config: ../../configs/model.yaml
+model_config: ../../outputs/training/ex009/configs/model.yaml
 ###モデルの切り替え
-checkpoint: ../../outputs/training/ex008/best.pt
-device: auto
+checkpoint: ../../outputs/training/ex009/best.pt
+device: auto #(cpu,cuda,auto)
 
 # evaluation.typeから結果の interpolation/extrapolation を導出する。
 output:
-  root_directory: ../results/ex008_baseline
+  root_directory: ../results/ex009_baseline
   metrics_json: metrics.json
   metrics_csv: metrics.csv
   interpolation_plot: interpolation_relative_l2.png

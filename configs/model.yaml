@@ -6,8 +6,8 @@ model:
   dataset_config: dataset.yaml
   dataloader_config: dataloader.yaml
 
-  n_modes: [24, 24]
-  hidden_channels: 518
+  n_modes: [48, 48]
+  hidden_channels: 259
   lifting_channels: 64
   projection_channels: 64
   n_layers: 4
